@@ -1,0 +1,66 @@
+module_name: VL53L8 Distro Board (serial)
+serial_config:
+    - command: vl53l8_distro start -d ${SERIAL_DEV}
+      port_config_param:
+        name: SENS_VL_D_CFG
+        group: Sensors
+        default: TEL3
+      num_instances: 1
+      supports_networking: false
+
+parameters:
+    - group: Sensors
+      definitions:
+          SENS_EN_VL53L8D:
+              description:
+                  short: Enable VL53L8 Distro Board
+                  long: |
+                      Enable the VL53L8 Distro Board for distance sensing.
+              type: boolean
+              default: true
+              num_instances: 1
+
+          VL_D_RATE:
+              description:
+                  short: Update rate in Hz
+                  long: |
+                      The update rate for the VL53L8 Distro Board in Hz.
+              type: enum
+              values:
+                  1: 10hz
+                  2: 20hz
+                  3: 50hz
+                  4: 100hz
+              reboot_required: true
+              num_instances: 1
+              default: 2
+
+          VL_D_ORIENT:
+              description:
+                  short: Orientation of the sensor
+                  long: |
+                      The orientation of the VL53L8 Distro Board sensor.
+              type: enum
+              values:
+                0: Upright
+                1: Downward facing
+                2: Forward facing
+                3: Backward facing
+              reboot_required: true
+              num_instances: 1
+              default: 0
+
+          VL_D_YAW_ANGLE:
+              description:
+                  short: Yaw angle of the sensor
+                  long: |
+                      The yaw angle of the VL53L8 Distro Board sensor.
+              type: enum
+              values:
+                0: Forward facing
+                1: Backward facing
+                2: Right facing
+                3: Left facing
+              reboot_required: true
+              num_instances: 1
+              default: 0
