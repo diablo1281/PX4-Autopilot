@@ -11,7 +11,6 @@
 #include <px4_log.h>
 
 #include <drivers/drv_hrt.h>
-#include <lib/drivers/rangefinder/PX4Rangefinder.hpp>
 #include <lib/perf/perf_counter.h>
 #include <px4_platform_common/px4_config.h>
 #include <px4_platform_common/defines.h>
@@ -65,8 +64,6 @@ private:
 
 	const char *_serial_port{nullptr};
 	int _port_fd{-1};
-
-	PX4Rangefinder _px4_rangefinder;
 
 	perf_counter_t _comms_errors{perf_alloc(PC_COUNT, MODULE_NAME": com_err")};
 	perf_counter_t _sample_perf{perf_alloc(PC_ELAPSED, MODULE_NAME": read")};

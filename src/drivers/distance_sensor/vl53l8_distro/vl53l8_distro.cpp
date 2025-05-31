@@ -9,8 +9,7 @@
 #include <lib/drivers/device/Device.hpp>
 
 VL53L8_Distro::VL53L8_Distro(const char *serial_port) :
-    ScheduledWorkItem(MODULE_NAME, px4::serial_port_to_wq(serial_port)),
-    _px4_rangefinder(0, distance_sensor_s::ROTATION_DOWNWARD_FACING)
+    ScheduledWorkItem(MODULE_NAME, px4::serial_port_to_wq(serial_port))
 {
     _serial_port = strdup(serial_port);
 
@@ -22,12 +21,7 @@ VL53L8_Distro::VL53L8_Distro(const char *serial_port) :
 	if (bus_num < 10) {
 		device_id.devid_s.bus = bus_num;
 	}
-    _px4_rangefinder.set_device_id(device_id.devid);
-	_px4_rangefinder.set_device_type(DRV_DIST_DEVTYPE_VL53L8_DISTRO);
 
-	_px4_rangefinder.set_max_distance(4.0f);
-	_px4_rangefinder.set_min_distance(0.05f);
-	_px4_rangefinder.set_fov(1.0f);
 }
 
 VL53L8_Distro::~VL53L8_Distro()
@@ -56,10 +50,13 @@ int VL53L8_Distro::collect()
 {
     perf_begin(_sample_perf);
 
-    // Placeholder for UART data collection logic
     PX4_INFO("Collecting data from sensor...");
-    char buffer[40] = {"Hello, VL53L8_Distro!"};
-    int bytes_written = ::write(_port_fd, (uint8_t *)buffer, 25);
+
+    tcflush(_port_fd, TCIFLUSH);
+
+    // Placeholder for UART data collection logic
+    const char *buffer = "Hello, VL53L8_Distro!\n";
+    int bytes_written = ::write(_port_fd, buffer, strlen(buffer));
     PX4_INFO("Wrote %d bytes to port %s", bytes_written, _serial_port);
     if(bytes_written <= 0) {
         PX4_ERR("write failed: %d (%s)", errno, strerror(errno));
@@ -73,6 +70,14 @@ int VL53L8_Distro::collect()
 void VL53L8_Distro::Run()
 {
     PX4_INFO("Running VL53L8_Distro loop...");
+    // Ensure the serial port is open.
+	if(open_serial_port() != PX4_OK) {
+        PX4_ERR("Failed to open serial port");
+        stop();
+        return;
+    }
+
+
     if (collect() != PX4_OK) {
         PX4_ERR("Failed to collect data");
         stop();
@@ -85,9 +90,6 @@ void VL53L8_Distro::Run()
 void VL53L8_Distro::start()
 {
     PX4_INFO("Starting VL53L8_Distro measurements");
-    // Ensure the serial port is open.
-	open_serial_port();
-
     // ScheduleNow();
     ScheduleOnInterval(500_ms, 0);
 }
@@ -103,7 +105,7 @@ void VL53L8_Distro::stop()
 
 int VL53L8_Distro::open_serial_port(const speed_t speed) {
     if(_port_fd > 0) {
-        PX4_ERR("Port already open");
+        // PX4_INFO("Port already open");
         return PX4_OK;
     }
 
@@ -118,12 +120,14 @@ int VL53L8_Distro::open_serial_port(const speed_t speed) {
 		return PX4_ERROR;
 	}
 
-	// if (!isatty(_port_fd)) {
-	// 	PX4_WARN("not a serial device");
-	// 	return PX4_ERROR;
-	// }
+    if (!isatty(_port_fd)) {
+        PX4_ERR("Port %s is not a valid TTY (not a typewriter)", _serial_port);
+        ::close(_port_fd);
+        _port_fd = -1;
+        return PX4_ERROR;
+    }
 
-    termios uart_config = {};
+    termios uart_config;
 
 	// Store the current port configuration. attributes.
 	if (tcgetattr(_port_fd, &uart_config)) {
