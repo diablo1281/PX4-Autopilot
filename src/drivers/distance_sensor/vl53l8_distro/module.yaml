@@ -1,6 +1,6 @@
 module_name: VL53L8 Distro Board (serial)
 serial_config:
-    - command: vl53l8_distro start -d ${SERIAL_DEV} -b p:${BAUD_PARAM}
+    - command: vl53l8_distro start -d ${SERIAL_DEV}
       port_config_param:
         name: VL_D_SER_CFG
         group: Sensors
