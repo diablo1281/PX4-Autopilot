@@ -5,8 +5,9 @@ px4_add_module(
 		vl53l8_distro.cpp
 		vl53l8_distro.hpp
 		vl53l8_distro_main.cpp
-	DEPENDS
-		px4_work_queue
 	MODULE_CONFIG
 		module.yaml
+	DEPENDS
+		drivers_rangefinder
+		px4_work_queue
 	)
