@@ -8,6 +8,5 @@ px4_add_module(
 	MODULE_CONFIG
 		module.yaml
 	DEPENDS
-		drivers_rangefinder
 		px4_work_queue
 	)

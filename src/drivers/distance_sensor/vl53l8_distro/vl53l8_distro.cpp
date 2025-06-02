@@ -1,5 +1,7 @@
 #include "vl53l8_distro.hpp"
 
+#include "uart_protocol.h"
+
 #include <cerrno>
 
 #include <fcntl.h>
@@ -55,8 +57,11 @@ int VL53L8_Distro::collect()
     tcflush(_port_fd, TCIFLUSH);
 
     // Placeholder for UART data collection logic
-    const char *buffer = "Hello, VL53L8_Distro!\n";
-    int bytes_written = ::write(_port_fd, buffer, strlen(buffer));
+    CMD_long_s cmd_long = CMD_long_s();
+    cmd_long.cmd = UART_PROT_CMD_TIMESYNC; // Example command
+    cmd_long.value = 0x0102030405060708; // Example value
+    cmd_long.crc = calculate_crc((uint8_t *)&cmd_long.packet_len, cmd_long.packet_len);
+    int bytes_written = ::write(_port_fd, (uint8_t *)&cmd_long, sizeof(cmd_long));
     PX4_INFO("Wrote %d bytes to port %s", bytes_written, _serial_port);
     if(bytes_written <= 0) {
         PX4_ERR("write failed: %d (%s)", errno, strerror(errno));
@@ -91,7 +96,7 @@ void VL53L8_Distro::start()
 {
     PX4_INFO("Starting VL53L8_Distro measurements");
     // ScheduleNow();
-    ScheduleOnInterval(500_ms, 0);
+    ScheduleOnInterval(1000_ms, 0);
 }
 
 void VL53L8_Distro::stop()
