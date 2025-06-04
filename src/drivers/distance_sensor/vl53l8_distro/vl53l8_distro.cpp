@@ -1,7 +1,5 @@
 #include "vl53l8_distro.hpp"
 
-#include "uart_protocol.h"
-
 #include <cerrno>
 
 #include <fcntl.h>
@@ -9,6 +7,18 @@
 #include <string.h>
 
 #include <lib/drivers/device/Device.hpp>
+
+uint16_t calculate_crc(const uint8_t *data, size_t length) {
+	uint16_t crc = 0xFFFF;
+	for(size_t i = 0; i < length; i++) {
+		crc ^= (uint16_t)data[i] << 8;
+		for(uint8_t j = 0; j < 8; j++) {
+			if(crc & 0x8000) crc = (crc << 1) ^ 0x1021;
+			else crc <<= 1;
+		}
+	}
+	return crc;
+}
 
 VL53L8_Distro::VL53L8_Distro(const char *serial_port) :
     ScheduledWorkItem(MODULE_NAME, px4::serial_port_to_wq(serial_port))
@@ -37,7 +47,6 @@ VL53L8_Distro::~VL53L8_Distro()
 
 int VL53L8_Distro::init()
 {
-    PX4_INFO("Initializing VL53L8_Distro on port: %s", _serial_port);
     start();
     return PX4_OK;
 }
@@ -74,38 +83,232 @@ int VL53L8_Distro::collect()
 
 void VL53L8_Distro::Run()
 {
-    PX4_INFO("Running VL53L8_Distro loop...");
+    perf_begin(_sample_perf);
+
+    if(_task_should_exit) {
+        PX4_INFO("VL53L8_Distro task exit requested");
+        // TODO: Handle cleanup if necessary
+        perf_cancel(_sample_perf);
+        return;
+    }
+
     // Ensure the serial port is open.
 	if(open_serial_port() != PX4_OK) {
         PX4_ERR("Failed to open serial port");
         stop();
+        ScheduleDelayed(500_ms); // Retry after a short delay
         return;
     }
 
-
-    if (collect() != PX4_OK) {
-        PX4_ERR("Failed to collect data");
+    // Check if the sensor is alive and initialize it
+    if (!_is_initialized && initialize_sensor() != PX4_OK) {
+        PX4_ERR("Failed to initialize VL53L8_Distro sensor");
+        perf_cancel(_sample_perf);
         stop();
         return;
     }
-    // Schedule next run if needed
-    // ScheduleDelayed(1000_ms);
+
+    get_sensors_resolution(); // Get the sensors resolution
+
+    measure_single(); // Perform a single measurement
+
+    // if (collect() != PX4_OK) {
+    //     PX4_ERR("Failed to collect data");
+    //     stop();
+    //     return;
+    // }
+
+    ScheduleDelayed(2_s); // Schedule the next run after 2 seconds
+
+    perf_end(_sample_perf);
 }
 
 void VL53L8_Distro::start()
 {
-    PX4_INFO("Starting VL53L8_Distro measurements");
+    PX4_INFO("Starting VL53L8_Distro thread");
     // ScheduleNow();
-    ScheduleOnInterval(1000_ms, 0);
+    ScheduleNow(); // Start the scheduled work immediately
 }
 
 void VL53L8_Distro::stop()
 {
     PX4_INFO("Stopping VL53L8_Distro measurements");
+    _task_should_exit = true;
+
+
+
     // Ensure the serial port is closed.
 	::close(_port_fd);
     // Clear the work queue schedule.
 	ScheduleClear();
+}
+
+int VL53L8_Distro::initialize_sensor() {
+    if(!_is_initialized) {
+        PX4_INFO("VL53L8_Distro not initialized, starting initialization");
+
+        CMD_short_s msg{};
+        int ret;
+        uint8_t retry = 0;
+
+        while (retry < 5)
+        {
+            msg.cmd = UART_PROT_CMD_IS_ALIVE;
+            msg.value = 0; // No specific value needed for this command
+            msg.calculate_crc();
+            ret = ::write(_port_fd, (uint8_t *)&msg, sizeof(msg));
+            PX4_INFO("Wrote %d bytes to port %s for checking if it'a alive", ret, _serial_port);
+            if (ret <= 0) {
+                PX4_ERR("write failed: %d (%s)", errno, strerror(errno));
+                perf_count(_comms_errors);
+                return PX4_ERROR;
+            }
+
+            px4_usleep(200_us);
+
+            ret = ::read(_port_fd, (uint8_t *)&msg, sizeof(msg));
+            if (ret <= 0) {
+                PX4_ERR("read failed: %d (%s)", errno, strerror(errno));
+                perf_count(_comms_errors);
+                // return PX4_ERROR;
+
+            } else if (parse_command(msg, UART_PROT_CMD_STATUS_ACK) == false) {
+                perf_count(_comms_errors);
+                // return PX4_ERROR;
+            } else {
+                PX4_INFO("VL53L8_Distro is alive on port: %s", _serial_port);
+                break; // Exit the loop if the sensor is alive
+            }
+            retry++;
+            px4_sleep(1); // Wait for a second before retrying
+        }
+
+        msg.cmd = UART_PROT_CMD_SENSOR_INIT;
+        msg.value = 0; // No specific value needed for this command
+        msg.calculate_crc();
+        // Send the sensor initialization command
+        ret = ::write(_port_fd, (uint8_t *)&msg, sizeof(msg));
+        PX4_INFO("Wrote %d bytes to port %s for sensor initialization", ret, _serial_port);
+        if (ret <= 0) {
+            PX4_ERR("write failed: %d (%s)", errno, strerror(errno));
+            perf_count(_comms_errors);
+            return PX4_ERROR;
+        }
+
+        retry = 0;
+
+        while(true) {
+            px4_sleep(1); // Allow some time for the sensor to initialize
+
+            // Read the acknowledgment from the sensor
+            ret = ::read(_port_fd, (uint8_t *)&msg, sizeof(msg));
+            if (ret <= 0) {
+                PX4_ERR("read failed: %d (%s)", errno, strerror(errno));
+                perf_count(_comms_errors);
+                // return PX4_ERROR;
+            } else if (parse_command(msg, UART_PROT_CMD_STATUS_ACK) == false) {
+                perf_count(_comms_errors);
+                // return PX4_ERROR;
+            } else {
+                break; // Exit the loop if the sensor is initialized successfully
+            }
+
+            if(retry >= 5) {
+                PX4_ERR("VL53L8_Distro initialization failed after multiple retries");
+                perf_count(_comms_errors);
+                return PX4_ERROR;
+            }
+
+            retry++;
+        }
+
+        PX4_INFO("VL53L8_Distro initialized successfully on port: %s [sensors: %d]", _serial_port, msg.value);
+        this->_is_initialized = true;
+    } else {
+        PX4_INFO("VL53L8_Distro already initialized on port: %s", _serial_port);
+    }
+
+    return PX4_OK;
+}
+
+int VL53L8_Distro::get_sensors_resolution() {
+    if(!_is_initialized) {
+        PX4_ERR("VL53L8_Distro not initialized, cannot get sensors resolution");
+        return PX4_ERROR;
+    }
+
+    CMD_short_s msg{};
+    msg.cmd = UART_PROT_CMD_SENSOR_RES;
+    msg.value = 0; // Value 0x00 for reading the sensors resolution
+    msg.calculate_crc();
+
+    int ret = ::write(_port_fd, (uint8_t *)&msg, sizeof(msg));
+    PX4_INFO("Wrote %d bytes to port %s for getting sensors resolution", ret, _serial_port);
+    if (ret <= 0) {
+        PX4_ERR("write failed: %d (%s)", errno, strerror(errno));
+        perf_count(_comms_errors);
+        return PX4_ERROR;
+    }
+
+    px4_usleep(200_us);
+
+    // Read the sensors resolution result
+    ret = ::read(_port_fd, (uint8_t *)&msg, sizeof(msg));
+    if (ret <= 0) {
+        PX4_ERR("read failed: %d (%s)", errno, strerror(errno));
+        perf_count(_comms_errors);
+        return PX4_ERROR;
+    }
+
+    if (parse_command(msg, UART_PROT_CMD_STATUS_ACK) == false) {
+        perf_count(_comms_errors);
+        return PX4_ERROR;
+    }
+
+    _sensors_resolution = msg.value; // Assuming value contains the resolution
+    PX4_INFO("Sensors resolution: %d", _sensors_resolution);
+
+    return PX4_OK;
+}
+
+int VL53L8_Distro::measure_single() {
+    if(!_is_initialized) {
+        PX4_ERR("VL53L8_Distro not initialized, cannot perform measurement");
+        return PX4_ERROR;
+    }
+
+    CMD_short_s msg{};
+    msg.cmd = UART_PROT_CMD_RNG_SINGLE;
+    msg.value = 0; // No specific value needed for this command
+    msg.calculate_crc();
+
+    int ret = ::write(_port_fd, (uint8_t *)&msg, sizeof(msg));
+    PX4_INFO("Wrote %d bytes to port %s for single measurement", ret, _serial_port);
+    if (ret <= 0) {
+        PX4_ERR("write failed: %d (%s)", errno, strerror(errno));
+        perf_count(_comms_errors);
+        return PX4_ERROR;
+    }
+
+    px4_usleep(200_us);
+
+    // Read the measurement result
+    ret = ::read(_port_fd, (uint8_t *)&msg, sizeof(msg));
+    if (ret <= 0) {
+        PX4_ERR("read failed: %d (%s)", errno, strerror(errno));
+        perf_count(_comms_errors);
+        return PX4_ERROR;
+    }
+
+    if (parse_command(msg, UART_PROT_CMD_STATUS_ACK) == false) {
+        perf_count(_comms_errors);
+        return PX4_ERROR;
+    }
+
+    // Process the measurement data here
+    // ...
+
+    return PX4_OK;
 }
 
 int VL53L8_Distro::open_serial_port(const speed_t speed) {
@@ -186,4 +389,42 @@ int VL53L8_Distro::open_serial_port(const speed_t speed) {
 
 	PX4_INFO("successfully opened UART port %s (%d)", _serial_port, _port_fd);
 	return PX4_OK;
+}
+
+bool VL53L8_Distro::parse_command(const CMD_short_s &cmd, uint8_t expected_cmd) {
+    if(cmd.header_1 != UART_PROT_MSG_HEADER_1 || cmd.header_2 != UART_PROT_MSG_HEADER_2) {
+        PX4_ERR("Invalid command header");
+        return false;
+    }
+
+    if(cmd.cmd != expected_cmd) {
+        PX4_ERR("Unexpected command: 0X%02X, expected: 0X%02X", cmd.cmd, expected_cmd);
+        return false;
+    }
+
+    if(cmd.crc != calculate_crc((uint8_t *)&cmd.packet_len, cmd.packet_len - UART_PROT_MSG_CRC_LEN)) {
+        PX4_ERR("CRC mismatch, expected: 0x%04X, received: 0x%04X", cmd.crc, calculate_crc((uint8_t *)&cmd.packet_len, cmd.packet_len - UART_PROT_MSG_CRC_LEN));
+        return false;
+    }
+
+    return true;
+}
+
+bool VL53L8_Distro::parse_command(const CMD_long_s &cmd, uint8_t expected_cmd) {
+    if(cmd.header_1 != UART_PROT_MSG_HEADER_1 || cmd.header_2 != UART_PROT_MSG_HEADER_2) {
+        PX4_ERR("Invalid command header");
+        return false;
+    }
+
+    if(cmd.cmd != expected_cmd) {
+        PX4_ERR("Unexpected command: 0X%02X, expected: 0X%02X", cmd.cmd, expected_cmd);
+        return false;
+    }
+
+    if(cmd.crc != calculate_crc((uint8_t *)&cmd.packet_len, cmd.packet_len - UART_PROT_MSG_CRC_LEN)) {
+        PX4_ERR("CRC mismatch, expected: 0x%04X, received: 0x%04X", cmd.crc, calculate_crc((uint8_t *)&cmd.packet_len, cmd.packet_len - UART_PROT_MSG_CRC_LEN));
+        return false;
+    }
+
+    return true;
 }
