@@ -25,6 +25,9 @@
 #define UART_PROT_CMD_SENSOR_RES	0x11
 #define UART_PROT_CMD_TARGET_ORD	0x12
 #define UART_PROT_CMD_TIMESYNC		0x21
+
+#define UART_PROT_CMD_DATA_READY	0x30
+
 #define UART_PROT_CMD_STATUS_ACK	0xA1
 #define UART_PROT_CMD_STATUS_ERROR	0xF0
 
@@ -58,9 +61,10 @@ struct __attribute__((__packed__)) CMD_short_s {
 	uint8_t		value;
 	uint16_t	crc;
 
-	uint16_t calculate_crc() {
-		crc = ::calculate_crc((uint8_t *)&packet_len, packet_len - UART_PROT_MSG_CRC_LEN);
-		return crc;
+	uint16_t calculate_crc(bool overwrite = false) {
+		uint16_t tmp = ::calculate_crc((uint8_t *)&packet_len, packet_len - UART_PROT_MSG_CRC_LEN);
+		if(overwrite) crc = tmp;
+		return tmp;
 	}
 };
 
@@ -69,24 +73,13 @@ struct __attribute__((__packed__)) CMD_long_s {
 	uint8_t		header_2 = UART_PROT_MSG_HEADER_2;		// - > HEADER
 	uint16_t	packet_len = 9 + UART_PROT_MSG_CRC_LEN;	// ->			only payload, with CRC
 	uint8_t		cmd;
-	union {
-		uint64_t	value;
-		struct {
-			uint8_t val_1;
-			uint8_t val_2;
-			uint8_t val_3;
-			uint8_t val_4;
-			uint8_t val_5;
-			uint8_t val_6;
-			uint8_t val_7;
-			uint8_t val_8;
-		};
-	};
+	uint64_t	value;
 	uint16_t	crc;
 
-	uint16_t calculate_crc() {
-		crc = ::calculate_crc((uint8_t *)&packet_len, packet_len - UART_PROT_MSG_CRC_LEN);
-		return crc;
+	uint16_t calculate_crc(bool overwrite = false) {
+		uint16_t tmp = ::calculate_crc((uint8_t *)&packet_len, packet_len - UART_PROT_MSG_CRC_LEN);
+		if(overwrite) crc = tmp;
+		return tmp;
 	}
 };
 
@@ -108,59 +101,12 @@ struct __attribute__((__packed__)) VL_Range_Data_s {
 	uint8_t		status[M];		// Status of measurment:  5 & 9 are OK; 255 if nothing
 	uint16_t	crc;
 
-	// void fill_data(VL53L8CX_ResultsData *data) {
-	// 	silicon_temp = data->silicon_temp_degc;
-	// 	memcpy(distance, data->distance_mm, sizeof(int16_t) * M);
-	// 	memcpy(range_sigma, data->distance_mm, sizeof(uint16_t) * M);
-	// 	memcpy(reflectance, data->distance_mm, sizeof(uint8_t) * M);
-	// 	memcpy(ambient, data->distance_mm, sizeof(uint32_t) * M);
-	// 	memcpy(signal, data->distance_mm, sizeof(uint32_t) * M);
-	// 	memcpy(status, data->distance_mm, sizeof(uint8_t) * M);
-	// }
-
-	uint16_t calculate_crc() {
-		crc = ::calculate_crc((uint8_t *)&packet_len, packet_len - UART_PROT_MSG_CRC_LEN);
-		return crc;
+	uint16_t calculate_crc(bool overwrite = false) {
+		uint16_t tmp = ::calculate_crc((uint8_t *)&packet_len, packet_len - UART_PROT_MSG_CRC_LEN);
+		if(overwrite) crc = tmp;
+		return tmp;
 	}
 };
-
-
-
-//struct __attribute__((__packed__)) VL_Range_Data_16_s {
-//	uint8_t		header_1 = UART_PROT_MSG_HEADER_1;		// ->
-//	uint8_t		header_2 = UART_PROT_MSG_HEADER_2;		// - > HEADER
-//	uint16_t	packet_len = 11 + (16 * 15) + UART_PROT_MSG_CRC_LEN;	// ->	only payload, with CRC
-//	uint64_t	timestamp;
-//	uint8_t		sensor_id;
-//	uint8_t		resolution;
-//	int8_t		silicon_temp;	// deg C
-//	uint8_t		targets[16];		// number of valid targets detected per zone
-//	int16_t		distance[16];	// Distance to target in mm								RAW /= 4
-//	uint16_t	range_sigma[16];	// Sigma of measured distances im mm					RAW /= 128
-//	uint8_t		reflectance[16];	// Estimated reflectance in %							RAW /= 2
-//	uint32_t	ambient[16];		// Ambient noise in kcps/spads							RAW /= 2048
-//	uint32_t	signal[16];		// Signal returned to the sensor in kcps/spads			RAW /= 2048
-//	uint8_t		status[16];		// Status of measurment:  5 & 9 are OK; 255 if nothing
-//	uint16_t	crc;
-//};
-//
-//struct __attribute__((__packed__)) VL_Range_Data_64_s {
-//	uint8_t		header_1 = UART_PROT_MSG_HEADER_1;		// ->
-//	uint8_t		header_2 = UART_PROT_MSG_HEADER_2;		// - > HEADER
-//	uint16_t	packet_len = 11 + (64 * 15) + UART_PROT_MSG_CRC_LEN;	// ->	only payload, with CRC
-//	uint64_t	timestamp;
-//	uint8_t		sensor_id;
-//	uint8_t		resolution;
-//	int8_t		silicon_temp;	// deg C
-//	uint8_t		targets[64];		// number of valid targets detected per zone
-//	int16_t		distance[64];	// Distance to target in mm								RAW /= 4
-//	uint16_t	range_sigma[64];	// Sigma of measured distances im mm					RAW /= 128
-//	uint8_t		reflectance[64];	// Estimated reflectance in %							RAW /= 2
-//	uint32_t	ambient[64];		// Ambient noise in kcps/spads							RAW /= 2048
-//	uint32_t	signal[64];		// Signal returned to the sensor in kcps/spads			RAW /= 2048
-//	uint8_t		status[64];		// Status of measurment:  5 & 9 are OK; 255 if nothing
-//	uint16_t	crc;
-//};
 
 #endif	// _cplusplus
 

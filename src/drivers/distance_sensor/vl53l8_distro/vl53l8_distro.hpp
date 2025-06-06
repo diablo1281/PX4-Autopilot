@@ -68,10 +68,12 @@ private:
 
 	int get_sensors_resolution();
 
-	int measure_single();
+	int measure(uint8_t command);
 
-	bool parse_command(const CMD_short_s &cmd, uint8_t expected_cmd);
-	bool parse_command(const CMD_long_s &cmd, uint8_t expected_cmd);
+	int wait_for_DATA_READY();
+
+	bool parse_command(CMD_short_s &cmd, uint8_t expected_cmd);
+	bool parse_command(CMD_long_s &cmd, uint8_t expected_cmd);
 
 	const char *_serial_port{nullptr};
 	int _port_fd{-1};
@@ -80,8 +82,10 @@ private:
 
 	bool _is_initialized{false};
 
-	uint8_t _sensors_resolution{64}; // Default resolution for VL53L8
+	bool _ranging_in_progress{false}; // Flag to indicate if a ranging operation is in progress
 
+	uint8_t _sensors_resolution{64}; // Default resolution for VL53L8
+	uint8_t _sensors_count{0}; // Default number of sensors
 	uint8_t _buffer[sizeof(VL_Range_Data_s<64>)];
 	uint16_t _buffer_len{sizeof(VL_Range_Data_s<64>)};
 
