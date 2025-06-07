@@ -65,7 +65,7 @@ int VL53L8_Distro::collect(uint32_t timeout_us)
 {
     perf_begin(_sample_perf);
 
-    PX4_INFO("Collecting data from sensor...");
+    // PX4_INFO("Collecting data from sensor...");
 
     PacketType packet_type;
     if(read_packet(packet_type, timeout_us) != PX4_OK) {
@@ -147,11 +147,19 @@ void VL53L8_Distro::Run()
             stop();
             return;
         }
+
+        // Start the automatic measurement
+        if(measure(UART_PROT_CMD_RNG_START) != PX4_OK) {
+            PX4_ERR("Failed to start ranging");
+            perf_cancel(_sample_perf);
+            stop();
+            return;
+        }
     }
 
     uint8_t data_received = 0;
     for(uint8_t i = 0; i < _sensors_count; i++) {
-        if (collect() != PX4_OK) {
+        if (collect(150_ms) != PX4_OK) {
             PX4_ERR("Failed to collect data from sensor %d", i);
             // stop();
             // return;
@@ -166,7 +174,8 @@ void VL53L8_Distro::Run()
         PX4_ERR("Failed to collect data from some sensors: %d/%d", data_received, _sensors_count);
     }
 
-    PX4_INFO("VL53L8_Distro task exit requested");
+    // ScheduleDelayed(100_ms); // Schedule the next run after a short delay
+    ScheduleNow();
 
     perf_end(_sample_perf);
 }
@@ -336,7 +345,7 @@ int VL53L8_Distro::measure(uint8_t command) {
     msg.calculate_crc(true);
 
     int ret = _uart.write((const void *)&msg, sizeof(msg));
-    PX4_INFO("Wrote %d bytes to port %s for single measurement", ret, _port);
+    PX4_INFO("Wrote %d bytes to port %s for start measurement", ret, _port);
     if (ret <= 0) {
         PX4_ERR("write failed: %d (%s)", errno, strerror(errno));
         perf_count(_comms_errors);
@@ -372,7 +381,7 @@ int VL53L8_Distro::measure(uint8_t command) {
 
 int VL53L8_Distro::open_serial_port(speed_t speed) {
     if(_uart.isOpen()) {
-        PX4_INFO("Serial port %s already open", _port);
+        // PX4_INFO("Serial port %s already open", _port);
         return PX4_OK;
     }
 
@@ -470,7 +479,8 @@ int VL53L8_Distro::read_packet(PacketType &packet_type, uint32_t timeout_us) {
             continue; // Skip to the next byte
         }
 
-        uint16_t packet_len = (((CMD_short_s *)&_buffer[0])->packet_len);
+        const uint16_t packet_len = (((CMD_short_s *)&_buffer[0])->packet_len);
+        // PX4_INFO("Packet length: %d", packet_len);
 
         if (packet_len < UART_PROT_PAYLOAD_MIN_SIZE || packet_len > UART_PROT_PAYLOAD_MAX_SIZE) {
             PX4_ERR("Invalid packet length: %d", packet_len);
@@ -484,22 +494,54 @@ int VL53L8_Distro::read_packet(PacketType &packet_type, uint32_t timeout_us) {
 
         uint32_t timeout_for_payload = (10 * packet_len) * 1e6 / _uart.getBaudrate(); // Calculate timeout based on baud rate
         timeout_for_payload *= 2; // Add 200% margin
+        uint16_t max_single_read = 256;
 
-        bytes_read = _uart.readAtLeast(buffer_ptr, packet_len, packet_len, timeout_for_payload);
-        if (bytes_read < 0) {
-            PX4_ERR("Failed to read packet payload: %d (%s)", errno, strerror(errno));
-            perf_count(_comms_errors);
-            return PX4_ERROR;
-        } else if (bytes_read == 0) {
-            PX4_ERR("No data read for packet payload within timeout");
-            buffer_ptr = (uint8_t *)&_buffer[0]; // Reset buffer pointer
-            buffer_remaining = _buffer_size;
-            continue; // Skip to the next byte
-        } else if (bytes_read != packet_len) {
-            PX4_ERR("Read %d bytes for packet payload, expected %d bytes", bytes_read, packet_len);
-            buffer_ptr = (uint8_t *)&_buffer[0]; // Reset buffer pointer
-            buffer_remaining = _buffer_size;
-            continue; // Skip to the next byte
+        if(packet_len <= max_single_read) {
+            bytes_read = _uart.readAtLeast(buffer_ptr, packet_len, packet_len, timeout_for_payload);
+            if (bytes_read < 0) {
+                PX4_ERR("Failed to read packet payload: %d (%s)", errno, strerror(errno));
+                perf_count(_comms_errors);
+                return PX4_ERROR;
+            } else if (bytes_read == 0) {
+                PX4_ERR("No data read for packet payload within timeout");
+                buffer_ptr = (uint8_t *)&_buffer[0]; // Reset buffer pointer
+                buffer_remaining = _buffer_size;
+                continue; // Skip to the next byte
+            } else if (bytes_read != packet_len) {
+                PX4_ERR("Read %d bytes for packet payload, expected %d bytes", bytes_read, packet_len);
+                buffer_ptr = (uint8_t *)&_buffer[0]; // Reset buffer pointer
+                buffer_remaining = _buffer_size;
+                continue; // Skip to the next byte
+            }
+        } else {
+            uint16_t remaining_bytes = packet_len;
+            ssize_t part_bytes_read = 0;
+            bytes_read = 0;
+
+            while(remaining_bytes > 0) {
+                part_bytes_read = _uart.readAtLeast(buffer_ptr, buffer_remaining, max_single_read, timeout_for_payload);
+                if (part_bytes_read < 0) {
+                    PX4_ERR("Failed to read packet payload: %d (%s)", errno, strerror(errno));
+                    perf_count(_comms_errors);
+                    return PX4_ERROR;
+                } else if (part_bytes_read == 0) {
+                    PX4_ERR("No data read for packet payload within timeout");
+                    buffer_ptr = (uint8_t *)&_buffer[0]; // Reset buffer pointer
+                    buffer_remaining = _buffer_size;
+                    continue; // Skip to the next byte
+                } else {
+                    remaining_bytes -= part_bytes_read;
+                    buffer_remaining -= part_bytes_read;
+                    buffer_ptr += part_bytes_read;
+                    bytes_read += part_bytes_read;
+
+                    // PX4_INFO("Read [ %d / %u ] bytes for packet payload, remaining bytes: %u", part_bytes_read, max_single_read, remaining_bytes);
+
+                    if (remaining_bytes < max_single_read) {
+                        max_single_read = remaining_bytes; // Adjust max_single_read for the next iteration
+                    }
+                }
+            }
         }
 
         uint16_t expected_crc = 0;
@@ -551,7 +593,7 @@ int VL53L8_Distro::read_packet(PacketType &packet_type, uint32_t timeout_us) {
             break;
         }
 
-        PX4_INFO("Received packet type: %d, size: %d bytes", (int)packet_type, bytes_read + UART_PROT_MSG_HEADER_LEN);
+        // PX4_INFO("Received packet type: %d, size: %d bytes", (int)packet_type, bytes_read + UART_PROT_MSG_HEADER_LEN);
 
         if(!crc_valid) {
             PX4_ERR("CRC mismatch in received packet [0x%04X != 0x%04X]", received_crc, expected_crc);
