@@ -20,15 +20,20 @@ uint16_t calculate_crc(const uint8_t *data, size_t length) {
 	return crc;
 }
 
-VL53L8_Distro::VL53L8_Distro(const char *serial_port) :
-    ScheduledWorkItem(MODULE_NAME, px4::serial_port_to_wq(serial_port))
+VL53L8_Distro::VL53L8_Distro(const char *path) :
+    ScheduledWorkItem(MODULE_NAME, px4::serial_port_to_wq(path))
 {
-    _serial_port = strdup(serial_port);
+    /* store port name */
+	strncpy(_port, path, sizeof(_port) - 1);
+    /* enforce null termination */
+	_port[sizeof(_port) - 1] = '\0';
+
+
 
     device::Device::DeviceId device_id;
 	device_id.devid_s.bus_type = device::Device::DeviceBusType::DeviceBusType_SERIAL;
 
-	uint8_t bus_num = atoi(&_serial_port[strlen(_serial_port) - 1]); // Assuming '/dev/ttySx'
+	uint8_t bus_num = atoi(&_port[strlen(_port) - 1]); // Assuming '/dev/ttySx'
 
 	if (bus_num < 10) {
 		device_id.devid_s.bus = bus_num;
@@ -40,7 +45,6 @@ VL53L8_Distro::~VL53L8_Distro()
 {
     stop();
 
-    free((char *)_serial_port);
     perf_free(_sample_perf);
 	perf_free(_comms_errors);
 }
@@ -57,99 +61,36 @@ void VL53L8_Distro::print_info()
 	perf_print_counter(_comms_errors);
 }
 
-int VL53L8_Distro::collect()
+int VL53L8_Distro::collect(uint32_t timeout_us)
 {
     perf_begin(_sample_perf);
 
-    // PX4_INFO("Collecting data from sensor...");
+    PX4_INFO("Collecting data from sensor...");
 
-    memset(&_buffer, 0, sizeof(_buffer));
-    hrt_abstime start_time = hrt_absolute_time();
-    int ret = -1;
-    int data_ok = PX4_ERROR;
-    while (hrt_elapsed_time(&start_time) < 500_ms) {
-        // Wait for sensor data
-        if(((ret = ::read(_port_fd, (uint8_t *)&_buffer[0], 1)) > 0) && (_buffer[0] == UART_PROT_MSG_HEADER_1)) {
-            px4_usleep(10_us); // Allow time for the second byte to arrive
-            if(((ret = ::read(_port_fd, (uint8_t *)&_buffer[1], 1)) > 0) && (_buffer[1] == UART_PROT_MSG_HEADER_2)) {
-                px4_usleep(20_us); // Allow time for the second byte to arrive
-                if((ret = ::read(_port_fd, (uint8_t *)&_buffer[2], 2)) == 2) {
-                    uint16_t packet_len = ((VL_Range_Data_s<64> *)&_buffer[0])->packet_len;
+    PacketType packet_type;
+    if(read_packet(packet_type, timeout_us) != PX4_OK) {
+        PX4_ERR("Failed to read packet from sensor");
+        perf_count(_comms_errors);
+        perf_end(_sample_perf);
+        return PX4_ERROR;
+    }
 
-                    if(packet_len <= 11) {
-                        // Got CMD command - shouldn't be here
-                        ::read(_port_fd, (uint8_t *)&_buffer[4], 1);
-                        PX4_ERR("Received CMD packet in collect(): %d", _buffer[4]);
-                        perf_count(_comms_errors);
-                        continue; // Skip this packet
-                    }
-
-                    if(packet_len == (sizeof(VL_Range_Data_s<64>) - UART_PROT_MSG_HEADER_LEN)) {
-                        // PX4_INFO("Received VL53L8_Distro data with resolution 64 [%d]", packet_len);
-                        _sensors_resolution = 64;
-                    } else if (packet_len == (sizeof(VL_Range_Data_s<16>) - UART_PROT_MSG_HEADER_LEN)) {
-                        // PX4_INFO("Received VL53L8_Distro data with resolution 16 [%d]", packet_len);
-                        _sensors_resolution = 16;
-                    } else {
-                        PX4_ERR("Unexpected packet length: %d", packet_len);
-                        perf_count(_comms_errors);
-                        continue; // Skip this packet
-                    }
-
-                    uint8_t *buffer_ptr = &_buffer[4];
-                    while(true) {
-                        ret = ::read(_port_fd, buffer_ptr, packet_len);
-                        if(ret <= 0) {
-                            px4_usleep(10_us); // Wait for more data
-                            continue;
-                        } else if (ret < packet_len) {
-                            // PX4_WARN("Partial read: %d bytes, expected: %d", ret, packet_len);
-                            buffer_ptr += ret;
-                            packet_len -= ret; // Adjust remaining length
-                            px4_usleep(500_us);
-                        } else {
-                            // PX4_INFO("Packet reading done");
-                            break; // All data read
-                        }
-                    }
-
-                    if(_sensors_resolution == 64) {
-                        VL_Range_Data_s<64> *data = (VL_Range_Data_s<64> *)&_buffer[0];
-                        if(data->crc != data->calculate_crc(false)) {
-                            PX4_ERR("CRC mismatch in VL53L8_Distro data [0x%04X != 0x%04X] timestamp: %llu, sensor_id: %d",
-                                    data->crc, data->calculate_crc(false), data->timestamp, data->sensor_id);
-                            perf_count(_comms_errors);
-                            data_ok = PX4_ERROR;
-                            break;
-                        }
-                        PX4_INFO("VL53L8_Distro data: timestamp: %llu, sensor_id: %d, resolution: %d",
-                                 data->timestamp, data->sensor_id, data->resolution);
-                        // Process the data as needed
-                        data_ok = PX4_OK; // Indicate successful data collection
-                        break;
-                    } else {
-                        VL_Range_Data_s<16> *data = (VL_Range_Data_s<16> *)&_buffer[0];
-                        if(data->crc != data->calculate_crc(false)) {
-                            PX4_ERR("CRC mismatch in VL53L8_Distro data [0x%04X != 0x%04X] timestamp: %llu, sensor_id: %d",
-                                    data->crc, data->calculate_crc(false), data->timestamp, data->sensor_id);
-                            perf_count(_comms_errors);
-                            data_ok = PX4_ERROR;
-                            break;
-                        }
-                        PX4_INFO("VL53L8_Distro data: timestamp: %llu, sensor_id: %d, resolution: %d",
-                                 data->timestamp, data->sensor_id, data->resolution);
-                        // Process the data as needed
-                        data_ok = PX4_OK; // Indicate successful data collection
-                        break;
-                    }
-                } else { PX4_ERR("Failed to read packet length"); }
-            } else { PX4_ERR("Failed to read second header byte"); }
-        }
+    if(packet_type == PacketType::MSG_RangeData_16) {
+        VL_Range_Data_s<16> *data = (VL_Range_Data_s<16> *)(_buffer);
+        PX4_INFO("Sensor data collected: timestamp: %llu, sensor %d, resolution: %d", data->timestamp, data->sensor_id, data->resolution);
+    } else if (packet_type == PacketType::MSG_RangeData_64) {
+        VL_Range_Data_s<64> *data = (VL_Range_Data_s<64> *)(_buffer);
+        PX4_INFO("Sensor data collected: timestamp: %llu, sensor %d, resolution: %d", data->timestamp, data->sensor_id, data->resolution);
+    } else {
+        PX4_ERR("Failed to collect data, invalid packet type: %d", packet_type);
+        perf_count(_comms_errors);
+        perf_end(_sample_perf);
+        return PX4_ERROR;
     }
 
     perf_end(_sample_perf);
 
-    return data_ok;
+    return PX4_OK;
 }
 
 void VL53L8_Distro::Run()
@@ -188,11 +129,9 @@ void VL53L8_Distro::Run()
             return;
         }
 
-        // px4_usleep(100_ms); // Wait for the sensor to process the measurement
-
         uint8_t data_received = 0;
         for(uint8_t i = 0; i < _sensors_count; i++) {
-            if(collect() != PX4_OK) {
+            if(collect(500_ms) != PX4_OK) {
                 PX4_ERR("Failed to collect data for sensor %d", i);
             } else {
                 PX4_INFO("Successfully collected data for sensor %d", i);
@@ -201,40 +140,13 @@ void VL53L8_Distro::Run()
         }
 
         if(data_received == _sensors_count) {
-            PX4_INFO("Successfully collected data from all sensors: %d", _sensors_count);
-            CMD_short_s msg{};
-            msg.cmd = UART_PROT_CMD_RNG_START;
-            msg.value = 0; // No specific value needed for this command
-            msg.calculate_crc(true);
-            int ret = ::write(_port_fd, (uint8_t *)&msg, sizeof(msg));
-            PX4_INFO("Wrote %d bytes to port %s to start ranging", ret, _serial_port);
-            if (ret <= 0) {
-                PX4_ERR("write failed: %d (%s)", errno, strerror(errno));
-                perf_count(_comms_errors);
-                stop();
-                return;
-            } else {
-                PX4_INFO("Ranging started successfully on port: %s", _serial_port);
-                _ranging_in_progress = true; // Set the flag to indicate ranging is in progress
-                ScheduleOnInterval(100_ms);
-                perf_end(_sample_perf);
-                return; // Exit after starting the ranging
-            }
+            PX4_INFO("Successfully performed initial measurement for all sensors: %d", _sensors_count);
         } else {
             PX4_ERR("Failed to collect data from some sensors: %d/%d", data_received, _sensors_count);
             perf_cancel(_sample_perf);
             stop();
             return;
         }
-    }
-
-    if(wait_for_DATA_READY() != PX4_OK) {
-        PX4_ERR("Failed to wait for DATA_READY signal");
-        perf_cancel(_sample_perf);
-        stop();
-        return;
-    } else {
-        PX4_INFO("DATA_READY signal received, proceeding with data collection");
     }
 
     uint8_t data_received = 0;
@@ -254,7 +166,7 @@ void VL53L8_Distro::Run()
         PX4_ERR("Failed to collect data from some sensors: %d/%d", data_received, _sensors_count);
     }
 
-    // ScheduleDelayed(80_ms); // Schedule the next run after 2 seconds
+    PX4_INFO("VL53L8_Distro task exit requested");
 
     perf_end(_sample_perf);
 }
@@ -263,7 +175,7 @@ void VL53L8_Distro::start()
 {
     PX4_INFO("Starting VL53L8_Distro thread");
     // ScheduleNow();
-    ScheduleNow(); // Start the scheduled work immediately
+    ScheduleDelayed(1_s);
 }
 
 void VL53L8_Distro::stop()
@@ -274,7 +186,7 @@ void VL53L8_Distro::stop()
 
 
     // Ensure the serial port is closed.
-	::close(_port_fd);
+	_uart.close();
     // Clear the work queue schedule.
 	ScheduleClear();
 }
@@ -292,29 +204,30 @@ int VL53L8_Distro::initialize_sensor() {
             msg.cmd = UART_PROT_CMD_IS_ALIVE;
             msg.value = 0; // No specific value needed for this command
             msg.calculate_crc(true);
-            ret = ::write(_port_fd, (uint8_t *)&msg, sizeof(msg));
-            PX4_INFO("Wrote %d bytes to port %s for checking if it'a alive", ret, _serial_port);
+            ret = _uart.write((const void *)&msg, sizeof(msg));
+            PX4_INFO("Wrote %d bytes to port %s for checking if it'a alive", ret, _port);
             if (ret <= 0) {
                 PX4_ERR("write failed: %d (%s)", errno, strerror(errno));
                 perf_count(_comms_errors);
                 return PX4_ERROR;
             }
 
-            px4_usleep(200_us);
-
-            ret = ::read(_port_fd, (uint8_t *)&msg, sizeof(msg));
-            if (ret <= 0) {
-                PX4_ERR("read failed: %d (%s)", errno, strerror(errno));
+            // Wait for the ACK response
+            PacketType packet_type;
+            ret = read_packet(packet_type, 10_ms);
+            if (ret < 0) {
+                PX4_ERR("Failed to read ACK response: %d (%s)", errno, strerror(errno));
                 perf_count(_comms_errors);
-                // return PX4_ERROR;
-
-            } else if (parse_command(msg, UART_PROT_CMD_STATUS_ACK) == false) {
+                return PX4_ERROR;
+            } else if (packet_type != PacketType::CMD_Short && (((CMD_short_s *)&_buffer[0])->cmd != UART_PROT_CMD_STATUS_ACK)) {
+                PX4_ERR("No ACK response received");
                 perf_count(_comms_errors);
-                // return PX4_ERROR;
+                return PX4_ERROR;
             } else {
-                PX4_INFO("VL53L8_Distro is alive on port: %s", _serial_port);
+                PX4_INFO("VL53L8_Distro is alive on port: %s", _port);
                 break; // Exit the loop if the sensor is alive
             }
+
             retry++;
             px4_sleep(1); // Wait for a second before retrying
         }
@@ -323,54 +236,39 @@ int VL53L8_Distro::initialize_sensor() {
         msg_long.cmd = UART_PROT_CMD_TIMESYNC;
         msg_long.value = hrt_abstime(); // Use current time for synchronization
         msg_long.calculate_crc(true);
-        ret = ::write(_port_fd, (uint8_t *)&msg_long, sizeof(msg_long));
-        PX4_INFO("Wrote %d bytes to port %s for time synchronization [%llu]", ret, _serial_port, msg_long.value);
+        ret = _uart.write((const void *)&msg_long, sizeof(msg_long));
+        PX4_INFO("Wrote %d bytes to port %s for time synchronization [%llu]", ret, _port, msg_long.value);
 
         msg.cmd = UART_PROT_CMD_SENSOR_INIT;
         msg.value = 0; // No specific value needed for this command
         msg.calculate_crc(true);
         // Send the sensor initialization command
-        ret = ::write(_port_fd, (uint8_t *)&msg, sizeof(msg));
-        PX4_INFO("Wrote %d bytes to port %s for sensor initialization", ret, _serial_port);
+        ret = _uart.write((const void *)&msg, sizeof(msg));
+        PX4_INFO("Wrote %d bytes to port %s for sensor initialization", ret, _port);
         if (ret <= 0) {
             PX4_ERR("write failed: %d (%s)", errno, strerror(errno));
             perf_count(_comms_errors);
             return PX4_ERROR;
         }
 
-        retry = 0;
-
-        px4_usleep(200_us);
-
-        while(true) {
-            // Read the acknowledgment from the sensor
-            ret = ::read(_port_fd, (uint8_t *)&msg, sizeof(msg));
-            if (ret <= 0) {
-                PX4_ERR("read failed: %d (%s)", errno, strerror(errno));
-                perf_count(_comms_errors);
-                // return PX4_ERROR;
-            } else if (parse_command(msg, UART_PROT_CMD_STATUS_ACK) == false) {
-                perf_count(_comms_errors);
-                // return PX4_ERROR;
-            } else {
-                break; // Exit the loop if the sensor is initialized successfully
-            }
-
-            if(retry > 5) {
-                PX4_ERR("VL53L8_Distro initialization failed after multiple retries");
-                perf_count(_comms_errors);
-                return PX4_ERROR;
-            }
-
-            retry++;
-            px4_sleep(1); // Allow some time for the sensor to initialize
+        // Wait for the ACK response from initialization command
+        PacketType packet_type;
+        ret = read_packet(packet_type, 10_s);
+        if (ret < 0) {
+            PX4_ERR("Failed to read ACK response: %d (%s)", errno, strerror(errno));
+            perf_count(_comms_errors);
+            return PX4_ERROR;
+        } else if (packet_type != PacketType::CMD_Short && (((CMD_short_s *)&_buffer[0])->cmd != UART_PROT_CMD_STATUS_ACK)) {
+            PX4_ERR("No ACK response received");
+            perf_count(_comms_errors);
+            return PX4_ERROR;
         }
 
-        _sensors_count = msg.value;
-        PX4_INFO("VL53L8_Distro initialized successfully on port: %s [sensors: %d]", _serial_port, _sensors_count);
+        _sensors_count = ((CMD_short_s *)&_buffer[0])->value;
+        PX4_INFO("VL53L8_Distro initialized successfully on port: %s [sensors: %d]", _port, _sensors_count);
         this->_is_initialized = true;
     } else {
-        PX4_INFO("VL53L8_Distro already initialized on port: %s", _serial_port);
+        PX4_INFO("VL53L8_Distro already initialized on port: %s", _port);
     }
 
     return PX4_OK;
@@ -387,25 +285,23 @@ int VL53L8_Distro::get_sensors_resolution() {
     msg.value = 0; // Value 0x00 for reading the sensors resolution
     msg.calculate_crc(true);
 
-    int ret = ::write(_port_fd, (uint8_t *)&msg, sizeof(msg));
-    PX4_INFO("Wrote %d bytes to port %s for getting sensors resolution", ret, _serial_port);
+    int ret = _uart.write((const void *)&msg, sizeof(msg));
+    PX4_INFO("Wrote %d bytes to port %s for getting sensors resolution", ret, _port);
     if (ret <= 0) {
         PX4_ERR("write failed: %d (%s)", errno, strerror(errno));
         perf_count(_comms_errors);
         return PX4_ERROR;
     }
 
-    px4_usleep(200_us);
-
-    // Read the sensors resolution result
-    ret = ::read(_port_fd, (uint8_t *)&msg, sizeof(msg));
-    if (ret <= 0) {
-        PX4_ERR("read failed: %d (%s)", errno, strerror(errno));
+    // Wait for the ACK response
+    PacketType packet_type;
+    ret = read_packet(packet_type, 5_ms);
+    if (ret < 0) {
+        PX4_ERR("Failed to read ACK response: %d (%s)", errno, strerror(errno));
         perf_count(_comms_errors);
         return PX4_ERROR;
-    }
-
-    if (parse_command(msg, UART_PROT_CMD_STATUS_ACK) == false) {
+    } else if (packet_type != PacketType::CMD_Short && (((CMD_short_s *)&_buffer[0])->cmd != UART_PROT_CMD_STATUS_ACK)) {
+        PX4_ERR("No ACK response received");
         perf_count(_comms_errors);
         return PX4_ERROR;
     }
@@ -439,25 +335,23 @@ int VL53L8_Distro::measure(uint8_t command) {
     msg.value = 0; // No specific value needed for this command
     msg.calculate_crc(true);
 
-    int ret = ::write(_port_fd, (uint8_t *)&msg, sizeof(msg));
-    PX4_INFO("Wrote %d bytes to port %s for single measurement", ret, _serial_port);
+    int ret = _uart.write((const void *)&msg, sizeof(msg));
+    PX4_INFO("Wrote %d bytes to port %s for single measurement", ret, _port);
     if (ret <= 0) {
         PX4_ERR("write failed: %d (%s)", errno, strerror(errno));
         perf_count(_comms_errors);
         return PX4_ERROR;
     }
 
-    px4_usleep(200_us);
-
-    // Read ACK
-    ret = ::read(_port_fd, (uint8_t *)&msg, sizeof(msg));
-    if (ret <= 0) {
-        PX4_ERR("read failed: %d (%s)", errno, strerror(errno));
+    // Wait for the ACK response
+    PacketType packet_type;
+    ret = read_packet(packet_type, 5_ms);
+    if (ret < 0) {
+        PX4_ERR("Failed to read ACK response: %d (%s)", errno, strerror(errno));
         perf_count(_comms_errors);
         return PX4_ERROR;
-    }
-
-    if (parse_command(msg, UART_PROT_CMD_STATUS_ACK) == false) {
+    } else if (packet_type != PacketType::CMD_Short && (((CMD_short_s *)&_buffer[0])->cmd != UART_PROT_CMD_STATUS_ACK)) {
+        PX4_ERR("No ACK response received");
         perf_count(_comms_errors);
         return PX4_ERROR;
     }
@@ -476,151 +370,199 @@ int VL53L8_Distro::measure(uint8_t command) {
     return PX4_OK;
 }
 
-int VL53L8_Distro::open_serial_port(const speed_t speed) {
-    if(_port_fd > 0) {
-        // PX4_INFO("Port already open");
+int VL53L8_Distro::open_serial_port(speed_t speed) {
+    if(_uart.isOpen()) {
+        PX4_INFO("Serial port %s already open", _port);
         return PX4_OK;
     }
 
-    // Configure port flags for read/write, non-controlling, non-blocking.
-	int flags = (O_RDWR | O_NOCTTY | O_NONBLOCK);
-
-    // Open the serial port.
-	_port_fd = ::open(_serial_port, flags);
-
-    if (_port_fd < 0) {
-		PX4_ERR("open failed (%i)", errno);
-		return PX4_ERROR;
-	}
-
-    if (!isatty(_port_fd)) {
-        PX4_ERR("Port %s is not a valid TTY (not a typewriter)", _serial_port);
-        ::close(_port_fd);
-        _port_fd = -1;
+    // Open the serial port
+    if(!_uart.setPort(_port)) {
+        PX4_ERR("Error configuring serial device on port %s", _port);
         return PX4_ERROR;
     }
 
-    termios uart_config;
+    // Configure the desired baudrate if one was specified by the user.
+    if(speed == 0) {
+        PX4_INFO("Using default baudrate for %s [%lu]", _port, _port_baudrate);
+        speed = _port_baudrate; // Use the default baudrate if not specified
+    } else {
+        PX4_INFO("Using baudrate for %s [%lu]", _port, _port_baudrate);
+        _port_baudrate = speed; // Update the baudrate to the specified value
+    }
 
-	// Store the current port configuration. attributes.
-	if (tcgetattr(_port_fd, &uart_config)) {
-		PX4_ERR("Unable to get termios from %s.", _serial_port);
-		::close(_port_fd);
-		_port_fd = -1;
-		return PX4_ERROR;
-	}
+    if(_port_baudrate > 0) {
+        if (!_uart.setBaudrate(_port_baudrate)) {
+            PX4_ERR("Error setting baudrate to %lu on %s", _port_baudrate, _port);
+            return PX4_ERROR;
+        }
+    } else {
+        PX4_ERR("Invalid baudrate specified for %s [%lu]", _port, _port_baudrate);
+        return PX4_ERROR;
+    }
 
-	// Clear: data bit size, two stop bits, parity, hardware flow control.
-	uart_config.c_cflag &= ~(CSIZE | CSTOPB | PARENB | CRTSCTS);
+    if(!_uart.open()) {
+        PX4_ERR("Error opening serial device %s", _port);
+        return PX4_ERROR;
+    }
 
-	// Set: 8 data bits, enable receiver, ignore modem status lines.
-	uart_config.c_cflag |= (CS8 | CREAD | CLOCAL);
+    PX4_INFO("Serial port %s opened successfully with baudrate %lu", _port, _port_baudrate);
 
-	// Clear: echo, echo new line, canonical input and extended input.
-	uart_config.c_lflag &= ~(ECHO | ECHONL | ICANON | IEXTEN);
-
-	// Clear ONLCR flag (which appends a CR for every LF).
-	uart_config.c_oflag &= ~ONLCR;
-
-	// Set the input baud rate in the uart_config struct.
-	int termios_state = cfsetispeed(&uart_config, speed);
-
-    if (termios_state < 0) {
-		PX4_ERR("CFG: %d ISPD", termios_state);
-		::close(_port_fd);
-		return PX4_ERROR;
-	}
-
-	// Set the output baud rate in the uart_config struct.
-	termios_state = cfsetospeed(&uart_config, speed);
-
-	if (termios_state < 0) {
-		PX4_ERR("CFG: %d OSPD", termios_state);
-		::close(_port_fd);
-		return PX4_ERROR;
-	}
-
-	// Apply the modified port attributes.
-	termios_state = tcsetattr(_port_fd, TCSANOW, &uart_config);
-
-	if (termios_state < 0) {
-		PX4_ERR("baud %d ATTR", termios_state);
-		::close(_port_fd);
-		return PX4_ERROR;
-	}
-
-    // Flush the hardware buffers.
-	tcflush(_port_fd, TCIOFLUSH);
-
-	PX4_INFO("successfully opened UART port %s (%d)", _serial_port, _port_fd);
 	return PX4_OK;
 }
 
-int VL53L8_Distro::wait_for_DATA_READY() {
+int VL53L8_Distro::read_packet(PacketType &packet_type, uint32_t timeout_us) {
+    ssize_t bytes_read = 0;
     hrt_abstime start_time = hrt_absolute_time();
-    int ret = -1;
-    CMD_long_s msg{};
-    while (hrt_elapsed_time(&start_time) < 500_ms) {
-        // Wait for DATA_READY signal
-        ret = ::read(_port_fd, (uint8_t *)&msg, sizeof(msg));
-        if (ret <= 0) {
-            px4_usleep(500_us); // Wait for more data
-            continue;
-        }
+    uint8_t *buffer_ptr = (uint8_t *)&_buffer[0]; // Use the internal buffer
+    uint16_t buffer_remaining = _buffer_size;
 
-        if((unsigned int)ret < sizeof(msg)) {
-            PX4_ERR("Partial read: %d bytes, expected: %zu", ret, sizeof(msg));
-            px4_usleep(500_us); // Wait for more data
-            ret += ::read(_port_fd, (((uint8_t *)&msg) + ret), sizeof(msg) - ret);
-        }
+    // FIXME: readAtLeast is reading more than one byte at a time, which is not expected.
 
-        if (parse_command(msg, UART_PROT_CMD_DATA_READY) == false) {
+    while (hrt_elapsed_time(&start_time) < timeout_us) {
+        bytes_read = _uart.readAtLeast(buffer_ptr, 1, 1, timeout_us / 10);
+        if (bytes_read < 0) {
+            PX4_ERR("Failed to read from UART: %d (%s)", errno, strerror(errno));
             perf_count(_comms_errors);
-            PX4_ERR("Failed to parse DATA_READY command");
+            return PX4_ERROR;
+        } else if (bytes_read == 0) {
+            PX4_ERR("No data read from UART within timeout");
             continue;
+        } else if(*buffer_ptr != UART_PROT_MSG_HEADER_1) {
+            PX4_ERR("Invalid header byte: 0x%02X", *buffer_ptr);
+            continue; // Skip to the next byte
+        } else if (bytes_read > 1) {
+            PX4_ERR("Read more than one byte when expecting header byte only [%u]", bytes_read);
         }
 
-        PX4_INFO("DATA_READY received: %llu", msg.value);
-        return PX4_OK; // Successfully received DATA_READY
+        buffer_remaining -= bytes_read;
+        buffer_ptr += bytes_read;
+
+        bytes_read = _uart.readAtLeast(buffer_ptr, 1, 1, 100_us);
+        if (bytes_read < 0) {
+            PX4_ERR("Failed to read second header byte: %d (%s)", errno, strerror(errno));
+            perf_count(_comms_errors);
+            return PX4_ERROR;
+        } else if (bytes_read == 0) {
+            PX4_ERR("No data read for second header byte within timeout");
+            buffer_ptr = (uint8_t *)&_buffer[0]; // Reset buffer pointer
+            buffer_remaining = _buffer_size;
+            continue; // Skip to the next byte
+        } else if(*buffer_ptr != UART_PROT_MSG_HEADER_2) {
+            PX4_ERR("Invalid second header byte: 0x%02X", *buffer_ptr);
+            buffer_ptr = (uint8_t *)&_buffer[0]; // Reset buffer pointer
+            buffer_remaining = _buffer_size;
+            continue; // Skip to the next byte
+        }
+
+        buffer_remaining -= bytes_read;
+        buffer_ptr += bytes_read;
+
+        bytes_read = _uart.readAtLeast(buffer_ptr, 2, 2, 100_us);
+        if (bytes_read < 0) {
+            PX4_ERR("Failed to read packet length: %d (%s)", errno, strerror(errno));
+            perf_count(_comms_errors);
+            return PX4_ERROR;
+        } else if (bytes_read == 0) {
+            PX4_ERR("No data read for packet length within timeout");
+            buffer_ptr = (uint8_t *)&_buffer[0]; // Reset buffer pointer
+            buffer_remaining = _buffer_size;
+            continue; // Skip to the next byte
+        }
+
+        uint16_t packet_len = (((CMD_short_s *)&_buffer[0])->packet_len);
+
+        if (packet_len < UART_PROT_PAYLOAD_MIN_SIZE || packet_len > UART_PROT_PAYLOAD_MAX_SIZE) {
+            PX4_ERR("Invalid packet length: %d", packet_len);
+            buffer_ptr = (uint8_t *)&_buffer[0]; // Reset buffer pointer
+            buffer_remaining = _buffer_size;
+            continue; // Skip to the next byte
+        }
+
+        buffer_remaining -= bytes_read;
+        buffer_ptr += bytes_read;
+
+        uint32_t timeout_for_payload = (10 * packet_len) * 1e6 / _uart.getBaudrate(); // Calculate timeout based on baud rate
+        timeout_for_payload *= 2; // Add 200% margin
+
+        bytes_read = _uart.readAtLeast(buffer_ptr, packet_len, packet_len, timeout_for_payload);
+        if (bytes_read < 0) {
+            PX4_ERR("Failed to read packet payload: %d (%s)", errno, strerror(errno));
+            perf_count(_comms_errors);
+            return PX4_ERROR;
+        } else if (bytes_read == 0) {
+            PX4_ERR("No data read for packet payload within timeout");
+            buffer_ptr = (uint8_t *)&_buffer[0]; // Reset buffer pointer
+            buffer_remaining = _buffer_size;
+            continue; // Skip to the next byte
+        } else if (bytes_read != packet_len) {
+            PX4_ERR("Read %d bytes for packet payload, expected %d bytes", bytes_read, packet_len);
+            buffer_ptr = (uint8_t *)&_buffer[0]; // Reset buffer pointer
+            buffer_remaining = _buffer_size;
+            continue; // Skip to the next byte
+        }
+
+        uint16_t expected_crc = 0;
+        uint16_t received_crc = 0;
+        bool crc_valid = false;
+        switch (bytes_read + UART_PROT_MSG_HEADER_LEN) {
+        case (sizeof(CMD_short_s)): {
+            packet_type = PacketType::CMD_Short;
+            CMD_short_s *packet = (CMD_short_s *)&_buffer[0];
+            expected_crc = packet->calculate_crc(false);
+            received_crc = packet->crc;
+            crc_valid = (received_crc == expected_crc);
+            break;
+        }
+
+        case (sizeof(CMD_long_s)): {
+            packet_type = PacketType::CMD_Long;
+            CMD_long_s *packet = (CMD_long_s *)&_buffer[0];
+            expected_crc = packet->calculate_crc(false);
+            received_crc = packet->crc;
+            crc_valid = (received_crc == expected_crc);
+            break;
+        }
+
+        case (sizeof(VL_Range_Data_s<16>)): {
+            packet_type = PacketType::MSG_RangeData_16;
+            VL_Range_Data_s<16> *packet = (VL_Range_Data_s<16> *)&_buffer[0];
+            expected_crc = packet->calculate_crc(false);
+            received_crc = packet->crc;
+            crc_valid = (received_crc == expected_crc);
+            break;
+        }
+
+        case (sizeof(VL_Range_Data_s<64>)): {
+            packet_type = PacketType::MSG_RangeData_64;
+            VL_Range_Data_s<64> *packet = (VL_Range_Data_s<64> *)&_buffer[0];
+            expected_crc = packet->calculate_crc(false);
+            received_crc = packet->crc;
+            crc_valid = (received_crc == expected_crc);
+            break;
+        }
+
+        default:
+            packet_type = PacketType::INVALID;
+            PX4_ERR("Invalid packet size: %d bytes", bytes_read);
+            buffer_ptr = (uint8_t *)&_buffer[0]; // Reset buffer pointer
+            buffer_remaining = _buffer_size;
+            continue; // Skip to the next byte
+            break;
+        }
+
+        PX4_INFO("Received packet type: %d, size: %d bytes", (int)packet_type, bytes_read + UART_PROT_MSG_HEADER_LEN);
+
+        if(!crc_valid) {
+            PX4_ERR("CRC mismatch in received packet [0x%04X != 0x%04X]", received_crc, expected_crc);
+            perf_count(_comms_errors);
+            buffer_ptr = (uint8_t *)&_buffer[0]; // Reset buffer pointer
+            buffer_remaining = _buffer_size;
+            continue; // Skip to the next byte
+        }
+
+        return PX4_OK; // Successfully read a packet
     }
 
-    return PX4_ERROR; // Timeout waiting for DATA_READY
-}
-
-bool VL53L8_Distro::parse_command(CMD_short_s &cmd, uint8_t expected_cmd) {
-    if(cmd.header_1 != UART_PROT_MSG_HEADER_1 || cmd.header_2 != UART_PROT_MSG_HEADER_2) {
-        PX4_ERR("Invalid command header");
-        return false;
-    }
-
-    if(cmd.cmd != expected_cmd) {
-        PX4_ERR("Unexpected command: 0X%02X, expected: 0X%02X", cmd.cmd, expected_cmd);
-        return false;
-    }
-
-    if(cmd.crc != cmd.calculate_crc(false)) {
-        PX4_ERR("CRC mismatch, expected: 0x%04X, received: 0x%04X", cmd.crc, cmd.calculate_crc(false));
-        return false;
-    }
-
-    return true;
-}
-
-bool VL53L8_Distro::parse_command(CMD_long_s &cmd, uint8_t expected_cmd) {
-    if(cmd.header_1 != UART_PROT_MSG_HEADER_1 || cmd.header_2 != UART_PROT_MSG_HEADER_2) {
-        PX4_ERR("Invalid command header");
-        return false;
-    }
-
-    if(cmd.cmd != expected_cmd) {
-        PX4_ERR("Unexpected command: 0X%02X, expected: 0X%02X", cmd.cmd, expected_cmd);
-        return false;
-    }
-
-    if(cmd.crc != cmd.calculate_crc(false)) {
-        PX4_ERR("CRC mismatch, expected: 0x%04X, received: 0x%04X", cmd.crc, cmd.calculate_crc(false));
-        return false;
-    }
-
-    return true;
+    return PX4_ERROR; // Timeout waiting for a packet
 }
