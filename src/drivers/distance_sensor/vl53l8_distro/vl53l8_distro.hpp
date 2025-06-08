@@ -85,6 +85,8 @@ private:
 
 	int read_packet(PacketType &packet_type, uint32_t timeout_us = 0);
 
+	int read_ACK(CMD_short_s &msg, uint32_t timeout_us = 0);
+
 	int read_data(uint32_t timeout_us = 0);
 
 	char 	_port[20]{};

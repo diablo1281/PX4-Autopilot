@@ -379,13 +379,13 @@ int VL53L8_Distro::get_sensors_resolution() {
         PX4_ERR("Failed to read ACK response: %d (%s)", errno, strerror(errno));
         perf_count(_comms_errors);
         return PX4_ERROR;
-    } else if (packet_type != PacketType::CMD_Short && (((CMD_short_s *)&_buffer[0])->cmd != UART_PROT_CMD_SENSOR_RES)) {
+    } else if (packet_type != PacketType::CMD_Short && (((CMD_short_s *)&_buffer[0])->cmd != UART_PROT_CMD_STATUS_ACK)) {
         PX4_ERR("No ACK response received");
         perf_count(_comms_errors);
         return PX4_ERROR;
     }
 
-    _sensors_resolution = msg.value; // Assuming value contains the resolution
+    _sensors_resolution = ((CMD_short_s *)&_buffer[0])->value; // Assuming value contains the resolution
     PX4_INFO("Sensors resolution: %d", _sensors_resolution);
 
     return PX4_OK;
@@ -490,19 +490,65 @@ int VL53L8_Distro::open_serial_port(speed_t speed) {
 	return PX4_OK;
 }
 
+int VL53L8_Distro::read_ACK(CMD_short_s &msg, uint32_t timeout_us) {
+    ssize_t bytes_read = _uart.readAtLeast((uint8_t *)&msg, sizeof(CMD_short_s), sizeof(CMD_short_s), timeout_us);
+
+    if(bytes_read < 0) {
+        PX4_ERR("Failed to read ACK from UART: %d (%s)", errno, strerror(errno));
+        perf_count(_comms_errors);
+        return PX4_ERROR;
+    } else if (bytes_read == 0) {
+        PX4_ERR("No ACK read from UART within timeout");
+        perf_count(_comms_errors);
+        return PX4_ERROR;
+    } else if (bytes_read != sizeof(CMD_short_s)) {
+        PX4_ERR("Read %zd bytes, expected %zu bytes for ACK", bytes_read, sizeof(CMD_short_s));
+        perf_count(_comms_errors);
+        return PX4_ERROR;
+    }
+
+    if(msg.crc != msg.calculate_crc(false)) {
+        PX4_ERR("CRC mismatch for ACK: received: %04X, expected: %04X", msg.crc, msg.calculate_crc(false));
+        perf_count(_comms_errors);
+        return PX4_ERROR;
+    }
+
+    return PX4_OK; // Successfully read ACK
+}
+
+int VL53L8_Distro::read_data(uint32_t timeout_us) {
+    uint16_t read_size = ((_sensors_resolution == 64) ? sizeof(VL_Range_Data_s<64>) : sizeof(VL_Range_Data_s<16>)) * _sensors_count;
+    ssize_t bytes_read = _uart.readAtLeast(_buffer, read_size, read_size, timeout_us);
+    if (bytes_read < 0) {
+        PX4_ERR("Failed to read data from UART: %d (%s)", errno, strerror(errno));
+        perf_count(_comms_errors);
+        return PX4_ERROR;
+    } else if (bytes_read == 0) {
+        PX4_ERR("No data read from UART within timeout");
+        perf_count(_comms_errors);
+        return PX4_ERROR;
+    } else if (bytes_read != read_size) {
+        PX4_ERR("Read %zd bytes, expected %d bytes", bytes_read, read_size);
+        perf_count(_comms_errors);
+        return PX4_ERROR;
+    }
+
+    return PX4_OK; // Successfully read data
+}
+
 int VL53L8_Distro::read_packet(PacketType &packet_type, uint32_t timeout_us) {
     hrt_abstime start_time = hrt_absolute_time();
     ssize_t bytes_read = 0;
     uint16_t i;
     uint16_t packet_len = 0;
     bool msg_found = false;
-    const uint16_t max_packet_size = (_sensors_resolution == 64) ? sizeof(VL_Range_Data_s<64>) : sizeof(VL_Range_Data_s<16>);
-    uint16_t remain_to_read = max_packet_size;
+    // const uint16_t max_packet_size = (_sensors_resolution == 64) ? sizeof(VL_Range_Data_s<64>) : sizeof(VL_Range_Data_s<16>);
+    // uint16_t remain_to_read = max_packet_size;
 
     while (hrt_elapsed_time(&start_time) < timeout_us) {
         // Read header
         bytes_read = _uart.readAtLeast(&_buffer[0],
-            remain_to_read,
+            UART_PROT_MSG_MIN_SIZE,
             UART_PROT_MSG_HEADER_LEN, timeout_us / 10);
         if(bytes_read < UART_PROT_MSG_HEADER_LEN) { PX4_ERR("Read too little: %d", bytes_read); continue; }// No data read or error
 
@@ -517,7 +563,7 @@ int VL53L8_Distro::read_packet(PacketType &packet_type, uint32_t timeout_us) {
                         if(i == 0) break; // Header is already at the start of the buffer
                         memmove(&_buffer[0], &_buffer[i], bytes_read - i); // Move the found header to the start of the buffer
                         bytes_read -= i; // Adjust bytes_read to reflect the new position
-                        remain_to_read = max_packet_size - bytes_read; // Calculate remaining bytes to read
+                        // remain_to_read = max_packet_size - bytes_read; // Calculate remaining bytes to read
                         break;
                     }
                 }
@@ -639,26 +685,6 @@ int VL53L8_Distro::read_packet(PacketType &packet_type, uint32_t timeout_us) {
     }
 
     return PX4_ERROR;   // timeout
-}
-
-int VL53L8_Distro::read_data(uint32_t timeout_us) {
-    uint16_t read_size = ((_sensors_resolution == 64) ? sizeof(VL_Range_Data_s<64>) : sizeof(VL_Range_Data_s<16>)) * _sensors_count;
-    ssize_t bytes_read = _uart.readAtLeast(_buffer, read_size, read_size, timeout_us);
-    if (bytes_read < 0) {
-        PX4_ERR("Failed to read data from UART: %d (%s)", errno, strerror(errno));
-        perf_count(_comms_errors);
-        return PX4_ERROR;
-    } else if (bytes_read == 0) {
-        PX4_ERR("No data read from UART within timeout");
-        perf_count(_comms_errors);
-        return PX4_ERROR;
-    } else if (bytes_read != read_size) {
-        PX4_ERR("Read %zd bytes, expected %d bytes", bytes_read, read_size);
-        perf_count(_comms_errors);
-        return PX4_ERROR;
-    }
-
-    return PX4_OK; // Successfully read data
 }
 
 // int VL53L8_Distro::read_packet(PacketType &packet_type, uint32_t timeout_us) {
