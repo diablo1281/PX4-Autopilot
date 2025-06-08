@@ -46,6 +46,9 @@
 
 #define UART_PROT_ERROR_UNKNOWN		0xCF
 
+#define VL53L8_RESOLUTION_4x4		16
+#define VL53L8_RESOLUTION_8x8		64
+
 /*
  * CMD:
  * - header (1+1)
