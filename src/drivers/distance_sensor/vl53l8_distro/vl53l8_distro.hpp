@@ -85,6 +85,8 @@ private:
 
 	int read_packet(PacketType &packet_type, uint32_t timeout_us = 0);
 
+	int read_data(uint32_t timeout_us = 0);
+
 	char 	_port[20]{};
 	Serial	_uart{};
 	speed_t _port_baudrate{1000000};
@@ -95,10 +97,10 @@ private:
 
 	bool _ranging_in_progress{false}; // Flag to indicate if a ranging operation is in progress
 
-	uint8_t _sensors_resolution{64}; // Default resolution for VL53L8
+	uint8_t _sensors_resolution{16}; // Default resolution for VL53L8
 	uint8_t _sensors_count{0}; // Default number of sensors
-	uint8_t _buffer[sizeof(VL_Range_Data_s<64>)];
-	const uint16_t _buffer_size{sizeof(VL_Range_Data_s<64>)};
+	uint8_t _buffer[sizeof(VL_Range_Data_s<64>) * 6];
+	const uint16_t _buffer_size{sizeof(_buffer)};
 
 	perf_counter_t _comms_errors{perf_alloc(PC_COUNT, MODULE_NAME": com_err")};
 	perf_counter_t _sample_perf{perf_alloc(PC_ELAPSED, MODULE_NAME": read")};
