@@ -255,11 +255,11 @@ int VL53L8_Distro::initialize_sensor() {
             if (ret < 0) {
                 PX4_ERR("Failed to read ACK response: %d (%s)", errno, strerror(errno));
                 perf_count(_comms_errors);
-                return PX4_ERROR;
+                // return PX4_ERROR;
             } else if (packet_type != PacketType::CMD_Short && (((CMD_short_s *)&_buffer[0])->cmd != UART_PROT_CMD_STATUS_ACK)) {
                 PX4_ERR("No ACK response received");
                 perf_count(_comms_errors);
-                return PX4_ERROR;
+                // return PX4_ERROR;
             } else {
                 PX4_INFO("VL53L8_Distro is alive on port: %s", _port);
                 break; // Exit the loop if the sensor is alive
