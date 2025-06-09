@@ -11,8 +11,8 @@ namespace vl53l8_distro
 
 VL53L8_Distro	*g_dev;
 
-int reset(const char *port);
-int start(const char *port);
+int reset(const char *port, int baudrate);
+int start(const char *port, int baudrate);
 int status();
 int stop();
 int usage();
@@ -21,10 +21,10 @@ int usage();
  * Reset the driver.
  */
 int
-reset(const char *port)
+reset(const char *port, int baudrate)
 {
 	if (stop() == PX4_OK) {
-		return start(port);
+		return start(port, baudrate);
 	}
 
 	return PX4_ERROR;
@@ -34,7 +34,7 @@ reset(const char *port)
  * Start the driver.
  */
 int
-start(const char *port)
+start(const char *port, int baudrate)
 {
 	if (port == nullptr) {
 		PX4_ERR("invalid port");
@@ -47,7 +47,7 @@ start(const char *port)
 	}
 
 	// Instantiate the driver.
-	g_dev = new VL53L8_Distro(port);
+	g_dev = new VL53L8_Distro(port, baudrate);
 
 	if (g_dev == nullptr) {
 		PX4_ERR("object instantiate failed");
@@ -113,12 +113,21 @@ usage()
 extern "C" __EXPORT int vl53l8_distro_main(int argc, char *argv[])
 {
 	const char *device_path = nullptr;
+	int baudrate = 0;
 	int ch;
 	int myoptind = 1;
 	const char *myoptarg = nullptr;
+	bool error_flag = false;
 
-	while ((ch = px4_getopt(argc, argv, "d:", &myoptind, &myoptarg)) != EOF) {
+	while ((ch = px4_getopt(argc, argv, "b:d:", &myoptind, &myoptarg)) != EOF) {
 		switch (ch) {
+		case 'b':
+			if(px4_get_parameter_value(myoptarg, baudrate) != 0) {
+				PX4_ERR("baudrate parsing failed");
+				error_flag = true;
+			}
+			break;
+
 		case 'd':
 			device_path = myoptarg;
 			break;
@@ -129,18 +138,22 @@ extern "C" __EXPORT int vl53l8_distro_main(int argc, char *argv[])
 		}
 	}
 
+	if(error_flag) {
+		return vl53l8_distro::usage();
+	}
+
 	if (myoptind >= argc) {
 		return vl53l8_distro::usage();
 	}
 
 	// Reset the driver.
 	if (!strcmp(argv[myoptind], "reset")) {
-		return vl53l8_distro::reset(device_path);
+		return vl53l8_distro::reset(device_path, baudrate);
 	}
 
 	// Start/load the driver.
 	if (!strcmp(argv[myoptind], "start")) {
-		return vl53l8_distro::start(device_path);
+		return vl53l8_distro::start(device_path, baudrate);
 	}
 
 	// Print driver information.

@@ -41,7 +41,7 @@ public:
 	 * @param serial_port The serial port to open for communicating with the sensor.
 	 * @param rotation The sensor rotation relative to the vehicle body.
 	 */
-	VL53L8_Distro(const char *path);
+	VL53L8_Distro(const char *path, int baudrate);
 	~VL53L8_Distro() override;
 
 	int init();
@@ -99,7 +99,7 @@ private:
 
 	bool _ranging_in_progress{false}; // Flag to indicate if a ranging operation is in progress
 
-	uint8_t _sensors_resolution{VL53L8_RESOLUTION_8x8}; // Default resolution for VL53L8
+	uint8_t _sensors_resolution{VL53L8_RESOLUTION_4x4}; // Default resolution for VL53L8
 	uint8_t _sensors_count{0}; // Default number of sensors
 	uint8_t _buffer[sizeof(VL_Range_Data_s<VL53L8_RESOLUTION_8x8>) * 6];
 	const uint16_t _buffer_size{sizeof(_buffer)};

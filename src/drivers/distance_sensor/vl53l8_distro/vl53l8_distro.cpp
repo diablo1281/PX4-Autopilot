@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <parameters/param.h>
+
 #include <lib/drivers/device/Device.hpp>
 
 uint16_t calculate_crc(const uint8_t *data, size_t length) {
@@ -20,7 +22,7 @@ uint16_t calculate_crc(const uint8_t *data, size_t length) {
 	return crc;
 }
 
-VL53L8_Distro::VL53L8_Distro(const char *path) :
+VL53L8_Distro::VL53L8_Distro(const char *path, int baudrate) :
     ScheduledWorkItem(MODULE_NAME, px4::serial_port_to_wq(path))
 {
     /* store port name */
@@ -28,7 +30,7 @@ VL53L8_Distro::VL53L8_Distro(const char *path) :
     /* enforce null termination */
 	_port[sizeof(_port) - 1] = '\0';
 
-
+    _port_baudrate = baudrate;
 
     device::Device::DeviceId device_id;
 	device_id.devid_s.bus_type = device::Device::DeviceBusType::DeviceBusType_SERIAL;
@@ -38,7 +40,6 @@ VL53L8_Distro::VL53L8_Distro(const char *path) :
 	if (bus_num < 10) {
 		device_id.devid_s.bus = bus_num;
 	}
-
 }
 
 VL53L8_Distro::~VL53L8_Distro()
@@ -51,6 +52,15 @@ VL53L8_Distro::~VL53L8_Distro()
 
 int VL53L8_Distro::init()
 {
+    int32_t resolution = 0;
+    param_get(param_find("VL_DISTRO_RES"), &resolution);
+
+    if(resolution > 0) {
+        _sensors_resolution = (uint8_t) resolution;
+    } else {
+        PX4_ERR("Error reading `VL_DISTRO_RES` parameter!");
+    }
+
     start();
     return PX4_OK;
 }

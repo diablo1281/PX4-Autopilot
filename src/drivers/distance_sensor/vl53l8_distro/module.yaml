@@ -1,7 +1,25 @@
 module_name: VL53L8 Distro Board (serial)
 serial_config:
-    - command: vl53l8_distro start -d ${SERIAL_DEV}
+    - command: vl53l8_distro start -d ${SERIAL_DEV} -b p:${BAUD_PARAM}
       port_config_param:
-        name: VL_D_SER_CFG
+        name: SENS_EN_VL_D_CFG
         group: Sensors
+        default: TEL3
+      num_instances: 1
       supports_networking: false
+
+parameters:
+    - group: Sensors
+      definitions:
+        VL_DISTRO_RES:
+            description:
+                short: Resolution of the VL53L8 sensor
+                long: |
+                    The VL53L8 sensor can operate at different resolutions, affecting the accuracy and range.
+            type: enum
+            values:
+                16: 4x4
+                64: 8x8
+            reboot_required: true
+            num_instances: 1
+            default: 16
