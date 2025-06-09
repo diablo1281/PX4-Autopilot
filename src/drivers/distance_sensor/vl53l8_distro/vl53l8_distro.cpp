@@ -71,6 +71,83 @@ void VL53L8_Distro::print_info()
 	perf_print_counter(_comms_errors);
 }
 
+// int VL53L8_Distro::collect(uint32_t timeout_us)
+// {
+//     perf_begin(_sample_perf);
+
+//     if (read_data(timeout_us) != PX4_OK) {
+//         PX4_ERR("Failed to read data from sensors");
+//         perf_count(_comms_errors);
+//         perf_end(_sample_perf);
+//         return PX4_ERROR;
+//     }
+
+//     uint8_t data_received = 0;
+//     size_t read_idx = 0;
+
+//     const size_t packet_size = (_sensors_resolution == VL53L8_RESOLUTION_8x8)
+//                                 ? sizeof(VL_Range_Data_s<VL53L8_RESOLUTION_8x8>)
+//                                 : sizeof(VL_Range_Data_s<VL53L8_RESOLUTION_4x4>);
+
+//     while (read_idx + packet_size <= _buffer_size && data_received < _sensors_count) {
+//         // Szukaj nagłówka
+//         while (read_idx + 1 < _buffer_size &&
+//                (_buffer[read_idx] != UART_PROT_MSG_HEADER_1 || _buffer[read_idx + 1] != UART_PROT_MSG_HEADER_2)) {
+//             read_idx++;
+//         }
+
+//         if (read_idx + packet_size > _buffer_size) break;
+
+//         // Próba sparsowania pakietu
+//         uint8_t sensor_id = 0, seq = 0;
+//         uint16_t received_crc = 0, expected_crc = 0;
+//         bool valid = false;
+
+//         if (_sensors_resolution == VL53L8_RESOLUTION_8x8) {
+//             auto *pkt = reinterpret_cast<VL_Range_Data_s<VL53L8_RESOLUTION_8x8>*>(&_buffer[read_idx]);
+//             sensor_id = pkt->sensor_id;
+//             seq = pkt->seq;
+//             received_crc = pkt->crc;
+//             expected_crc = pkt->calculate_crc();
+
+//             if (expected_crc == received_crc) valid = true;
+//         } else {
+//             auto *pkt = reinterpret_cast<VL_Range_Data_s<VL53L8_RESOLUTION_4x4>*>(&_buffer[read_idx]);
+//             sensor_id = pkt->sensor_id;
+//             seq = pkt->seq;
+//             received_crc = pkt->crc;
+//             expected_crc = pkt->calculate_crc();
+
+//             if (expected_crc == received_crc) valid = true;
+//         }
+
+//         if (!valid) {
+//             PX4_WARN("CRC mismatch: received %04X, expected %04X", received_crc, expected_crc);
+//             read_idx++; // przesuwamy się tylko o 1 bajt, by próbować dalej znaleźć header
+//             perf_count(_comms_errors);
+//             continue;
+//         }
+
+//         // Sprawdź sekwencję
+//         if (last_seq_by_sensor.contains(sensor_id)) {
+//             uint8_t last_seq = last_seq_by_sensor[sensor_id];
+//             if ((uint8_t)(last_seq + 1) != seq) {
+//                 PX4_WARN("Sensor %u: SEQ mismatch! Got %u, expected %u", sensor_id, seq, (uint8_t)(last_seq + 1));
+//             }
+//         }
+
+//         last_seq_by_sensor[sensor_id] = seq;
+
+//         // Parsowanie zakończone sukcesem
+//         data_received++;
+//         read_idx += packet_size;
+//     }
+
+//     perf_end(_sample_perf);
+
+//     return (data_received == _sensors_count) ? PX4_OK : PX4_ERROR;
+// }
+
 int VL53L8_Distro::collect(uint32_t timeout_us)
 {
     perf_begin(_sample_perf);
@@ -86,7 +163,9 @@ int VL53L8_Distro::collect(uint32_t timeout_us)
     bool is_data_valid = false;
     uint16_t expected_crc = 0;
     uint16_t received_crc = 0;
-    for(uint8_t i = 0; i < _sensors_count; i++) {
+    // for(uint8_t i = 0; i < _sensors_count; i++) {
+    while(read_idx < (_buffer_size - 1)) {
+        is_data_valid = false;
         while (read_idx < (_buffer_size - 1)) {
             if(_buffer[read_idx] == UART_PROT_MSG_HEADER_1 && _buffer[read_idx + 1] == UART_PROT_MSG_HEADER_2) {
                 is_data_valid = true;
@@ -103,29 +182,37 @@ int VL53L8_Distro::collect(uint32_t timeout_us)
             return PX4_ERROR;
         }
 
+        if(((VL_Range_Data_s<VL53L8_RESOLUTION_4x4> *)&_buffer[read_idx])->resolution != _sensors_resolution) {
+            PX4_ERR("Wrong resolution: [ %u != %u ]", ((VL_Range_Data_s<VL53L8_RESOLUTION_4x4> *)&_buffer[read_idx])->resolution, _sensors_resolution);
+            perf_count(_comms_errors);
+            read_idx++;
+            continue;
+        }
+
         if(_sensors_resolution == VL53L8_RESOLUTION_8x8) {
             VL_Range_Data_s<VL53L8_RESOLUTION_8x8> *data = (VL_Range_Data_s<VL53L8_RESOLUTION_8x8> *)&_buffer[read_idx];
             received_crc = data->crc;
             expected_crc = data->calculate_crc(false);
-            PX4_INFO("Sensor data: timestamp: %llu, sensor_id: %d, resolution: %d", data->timestamp, data->sensor_id, data->resolution);
+            // PX4_INFO("Sensor data: timestamp: %llu, sensor_id: %d, resolution: %d", data->timestamp, data->sensor_id, data->resolution);
             read_idx += sizeof(VL_Range_Data_s<VL53L8_RESOLUTION_8x8>);
         } else if (_sensors_resolution == VL53L8_RESOLUTION_4x4) {
             VL_Range_Data_s<VL53L8_RESOLUTION_4x4> *data = (VL_Range_Data_s<VL53L8_RESOLUTION_4x4> *)&_buffer[read_idx];
             received_crc = data->crc;
             expected_crc = data->calculate_crc(false);
-            PX4_INFO("Sensor data: timestamp: %llu, sensor_id: %d, resolution: %d", data->timestamp, data->sensor_id, data->resolution);
+            // PX4_INFO("Sensor data: timestamp: %llu, sensor_id: %d, resolution: %d", data->timestamp, data->sensor_id, data->resolution);
             read_idx += sizeof(VL_Range_Data_s<VL53L8_RESOLUTION_4x4>);
         } else {
             PX4_ERR("Unsupported sensor resolution: %d", _sensors_resolution);
             perf_count(_comms_errors);
-            perf_end(_sample_perf);
-            return PX4_ERROR;
+            read_idx++;
+            continue;
         }
 
         if(received_crc != expected_crc) {
             PX4_ERR("CRC mismatch: received: %04X, expected: %04X", received_crc, expected_crc);
             perf_count(_comms_errors);
             is_data_valid = false; // Reset for the next sensor data
+            read_idx++;
             continue; // Skip to the next sensor
         }
 
@@ -135,7 +222,7 @@ int VL53L8_Distro::collect(uint32_t timeout_us)
 
     perf_end(_sample_perf);
 
-    return PX4_OK;
+    return (data_received == _sensors_count) ? PX4_OK : PX4_ERROR;
 }
 
 void VL53L8_Distro::Run()
@@ -201,7 +288,7 @@ void VL53L8_Distro::Run()
         return;
     }
 
-    collect(100_ms); // Collect data for the next reading cycle
+    collect(120_ms); // Collect data for the next reading cycle
 
     ScheduleNow();
 

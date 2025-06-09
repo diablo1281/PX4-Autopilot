@@ -22,4 +22,4 @@ parameters:
                 64: 8x8
             reboot_required: true
             num_instances: 1
-            default: 16
+            default: 64

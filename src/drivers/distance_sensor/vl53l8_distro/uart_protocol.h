@@ -10,14 +10,14 @@
 
 #include <stdint.h>
 
-#define UART_PROT_MSG_HEADER_1	0xAA
-#define UART_PROT_MSG_HEADER_2	0x55
+#define UART_PROT_MSG_HEADER_1	0xD3
+#define UART_PROT_MSG_HEADER_2	0xAC
 
 #define UART_PROT_MSG_HEADER_LEN	4
 #define UART_PROT_MSG_CRC_LEN		2
 
-#define UART_PROT_PAYLOAD_MIN_SIZE	(1 + 1 + UART_PROT_MSG_CRC_LEN)
-#define UART_PROT_PAYLOAD_MAX_SIZE	(11 + (64 * 14) + UART_PROT_MSG_CRC_LEN)
+#define UART_PROT_PAYLOAD_MIN_SIZE	(sizeof(CMD_short_s) - UART_PROT_MSG_HEADER_LEN)
+#define UART_PROT_PAYLOAD_MAX_SIZE	(sizeof(VL_Range_Data_s<64>) - UART_PROT_MSG_HEADER_LEN)
 
 #define UART_PROT_MSG_MIN_SIZE		(UART_PROT_MSG_HEADER_LEN + UART_PROT_PAYLOAD_MIN_SIZE)
 #define UART_PROT_MSG_MAX_SIZE		(UART_PROT_MSG_HEADER_LEN + UART_PROT_PAYLOAD_MAX_SIZE)
@@ -96,17 +96,20 @@ template <size_t M>
 struct __attribute__((__packed__)) VL_Range_Data_s {
 	uint8_t		header_1 = UART_PROT_MSG_HEADER_1;		// ->
 	uint8_t		header_2 = UART_PROT_MSG_HEADER_2;		// - > HEADER
-	uint16_t	packet_len = 11 + (M * 14) + UART_PROT_MSG_CRC_LEN;	// ->	only payload, with CRC
-	uint64_t	timestamp;
+	uint16_t	packet_len = 11 + (M * 7) + UART_PROT_MSG_CRC_LEN;	// ->	only payload, with CRC
 	uint8_t		sensor_id;
+	uint8_t		seq;
 	uint8_t		resolution = M;
+	uint64_t	timestamp;
 	int8_t		silicon_temp;	// deg C
 //	uint8_t		targets[M];		// number of valid targets detected per zone
-	int16_t		distance[M];	// Distance to target in mm								RAW /= 4
-	uint16_t	range_sigma[M];	// Sigma of measured distances im mm					RAW /= 128
-	uint8_t		reflectance[M];	// Estimated reflectance in %							RAW /= 2
-	uint32_t	ambient[M];		// Ambient noise in kcps/spads							RAW /= 2048
-	uint32_t	signal[M];		// Signal returned to the sensor in kcps/spads			RAW /= 2048
+	int16_t		distance[M];	// Distance to target									(RAW / 4) = mm
+	uint16_t	range_sigma[M];	// Sigma of measured distances							(RAW / 128) = mm
+//	uint8_t		reflectance[M];	// Estimated reflectance in %							RAW /= 2
+//	uint32_t	ambient[M];		// Ambient noise in kcps/spads							RAW /= 2048
+	uint8_t		ambient[M];		// Ambient noise in kcps/spads							(RAW /= 2048) - max 0xFF
+//	uint32_t	signal[M];		// Signal returned to the sensor in kcps/spads			RAW /= 2048
+	uint8_t		signal[M];		// Signal returned to the sensor in kcps/spads			(RAW /= 2048) - max 0xFF
 	uint8_t		status[M];		// Status of measurment:  5 & 9 are OK; 255 if nothing
 	uint16_t	crc;
 
