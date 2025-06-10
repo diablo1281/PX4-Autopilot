@@ -23,3 +23,234 @@ parameters:
             reboot_required: true
             num_instances: 1
             default: 64
+
+        VL_D_1_ORIENT:
+            description:
+                short: Orientation of VL53L8 SENSOR 1
+                long: |
+                    Orientation of sensor connected to the connector 1 on VL53L8 Distro board.
+            type: enum
+            values:
+                0: YAW 0
+                1: YAW 30
+                2: YAW 60
+                3: YAW 90
+                4: YAW 120
+                5: YAW 150
+                6: YAW 180
+                7: YAW 210
+                8: YAW 240
+                9: YAW 270
+                10: YAW 300
+                11: YAW 330
+            reboot_required: true
+            num_instances: 1
+            default: 1
+
+        VL_D_2_ORIENT:
+            description:
+                short: Orientation of VL53L8 SENSOR 2
+                long: |
+                    Orientation of sensor connected to the connector 2 on VL53L8 Distro board.
+            type: enum
+            values:
+                0: YAW 0
+                1: YAW 30
+                2: YAW 60
+                3: YAW 90
+                4: YAW 120
+                5: YAW 150
+                6: YAW 180
+                7: YAW 210
+                8: YAW 240
+                9: YAW 270
+                10: YAW 300
+                11: YAW 330
+            reboot_required: true
+            num_instances: 1
+            default: 3
+
+        VL_D_3_ORIENT:
+            description:
+                short: Orientation of VL53L8 SENSOR 3
+                long: |
+                    Orientation of sensor connected to the connector 3 on VL53L8 Distro board.
+            type: enum
+            values:
+                0: YAW 0
+                1: YAW 30
+                2: YAW 60
+                3: YAW 90
+                4: YAW 120
+                5: YAW 150
+                6: YAW 180
+                7: YAW 210
+                8: YAW 240
+                9: YAW 270
+                10: YAW 300
+                11: YAW 330
+            reboot_required: true
+            num_instances: 1
+            default: 5
+
+        VL_D_4_ORIENT:
+            description:
+                short: Orientation of VL53L8 SENSOR 4
+                long: |
+                    Orientation of sensor connected to the connector 4 on VL53L8 Distro board.
+            type: enum
+            values:
+                0: YAW 0
+                1: YAW 30
+                2: YAW 60
+                3: YAW 90
+                4: YAW 120
+                5: YAW 150
+                6: YAW 180
+                7: YAW 210
+                8: YAW 240
+                9: YAW 270
+                10: YAW 300
+                11: YAW 330
+            reboot_required: true
+            num_instances: 1
+            default: 7
+
+        VL_D_5_ORIENT:
+            description:
+                short: Orientation of VL53L8 SENSOR 5
+                long: |
+                    Orientation of sensor connected to the connector 5 on VL53L8 Distro board.
+            type: enum
+            values:
+                0: YAW 0
+                1: YAW 30
+                2: YAW 60
+                3: YAW 90
+                4: YAW 120
+                5: YAW 150
+                6: YAW 180
+                7: YAW 210
+                8: YAW 240
+                9: YAW 270
+                10: YAW 300
+                11: YAW 330
+            reboot_required: true
+            num_instances: 1
+            default: 9
+
+        VL_D_6_ORIENT:
+            description:
+                short: Orientation of VL53L8 SENSOR 6
+                long: |
+                    Orientation of sensor connected to the connector 6 on VL53L8 Distro board.
+            type: enum
+            values:
+                0: YAW 0
+                1: YAW 30
+                2: YAW 60
+                3: YAW 90
+                4: YAW 120
+                5: YAW 150
+                6: YAW 180
+                7: YAW 210
+                8: YAW 240
+                9: YAW 270
+                10: YAW 300
+                11: YAW 330
+            reboot_required: true
+            num_instances: 1
+            default: 11
+
+        VL_D_7_ORIENT:
+            description:
+                short: Orientation of VL53L8 SENSOR 7
+                long: |
+                    Orientation of sensor connected to the connector 7 on VL53L8 Distro board.
+            type: enum
+            values:
+                0: YAW 0
+                1: YAW 30
+                2: YAW 60
+                3: YAW 90
+                4: YAW 120
+                5: YAW 150
+                6: YAW 180
+                7: YAW 210
+                8: YAW 240
+                9: YAW 270
+                10: YAW 300
+                11: YAW 330
+            reboot_required: true
+            num_instances: 1
+            default: 0
+
+        VL_D_8_ORIENT:
+            description:
+                short: Orientation of VL53L8 SENSOR 8
+                long: |
+                    Orientation of sensor connected to the connector 8 on VL53L8 Distro board.
+            type: enum
+            values:
+                0: YAW 0
+                1: YAW 30
+                2: YAW 60
+                3: YAW 90
+                4: YAW 120
+                5: YAW 150
+                6: YAW 180
+                7: YAW 210
+                8: YAW 240
+                9: YAW 270
+                10: YAW 300
+                11: YAW 330
+            reboot_required: true
+            num_instances: 1
+            default: 0
+
+        VL_D_9_ORIENT:
+            description:
+                short: Orientation of VL53L8 SENSOR 9
+                long: |
+                    Orientation of sensor connected to the connector 9 on VL53L8 Distro board.
+            type: enum
+            values:
+                0: YAW 0
+                1: YAW 30
+                2: YAW 60
+                3: YAW 90
+                4: YAW 120
+                5: YAW 150
+                6: YAW 180
+                7: YAW 210
+                8: YAW 240
+                9: YAW 270
+                10: YAW 300
+                11: YAW 330
+            reboot_required: true
+            num_instances: 1
+            default: 0
+
+        VL_D_10_ORIENT:
+            description:
+                short: Orientation of VL53L8 SENSOR 10
+                long: |
+                    Orientation of sensor connected to the connector 10 on VL53L8 Distro board.
+            type: enum
+            values:
+                0: YAW 0
+                1: YAW 30
+                2: YAW 60
+                3: YAW 90
+                4: YAW 120
+                5: YAW 150
+                6: YAW 180
+                7: YAW 210
+                8: YAW 240
+                9: YAW 270
+                10: YAW 300
+                11: YAW 330
+            reboot_required: true
+            num_instances: 1
+            default: 0
+

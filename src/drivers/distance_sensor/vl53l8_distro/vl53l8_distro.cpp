@@ -60,6 +60,18 @@ int VL53L8_Distro::init()
     } else {
         PX4_ERR("Error reading `VL_DISTRO_RES` parameter!");
     }
+    int32_t orientation = 0;
+
+    param_get(param_find("VL_D_1_ORIENT"), &orientation); _sensors_rotation[0] = (uint8_t)orientation;
+    param_get(param_find("VL_D_2_ORIENT"), &orientation); _sensors_rotation[1] = (uint8_t)orientation;
+    param_get(param_find("VL_D_3_ORIENT"), &orientation); _sensors_rotation[2] = (uint8_t)orientation;
+    param_get(param_find("VL_D_4_ORIENT"), &orientation); _sensors_rotation[3] = (uint8_t)orientation;
+    param_get(param_find("VL_D_5_ORIENT"), &orientation); _sensors_rotation[4] = (uint8_t)orientation;
+    param_get(param_find("VL_D_6_ORIENT"), &orientation); _sensors_rotation[5] = (uint8_t)orientation;
+    param_get(param_find("VL_D_7_ORIENT"), &orientation); _sensors_rotation[6] = (uint8_t)orientation;
+    param_get(param_find("VL_D_8_ORIENT"), &orientation); _sensors_rotation[7] = (uint8_t)orientation;
+    param_get(param_find("VL_D_9_ORIENT"), &orientation); _sensors_rotation[8] = (uint8_t)orientation;
+    param_get(param_find("VL_D_10_ORIENT"), &orientation); _sensors_rotation[9] = (uint8_t)orientation;
 
     start();
     return PX4_OK;

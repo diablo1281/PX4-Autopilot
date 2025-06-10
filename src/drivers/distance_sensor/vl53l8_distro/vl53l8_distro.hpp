@@ -99,6 +99,11 @@ private:
 
 	bool _ranging_in_progress{false}; // Flag to indicate if a ranging operation is in progress
 
+	float _sensors_min_distance{0.04f};
+	float _sensors_max_distance{4.0f};
+	float _sensors_h_fov{0.785398163397448};
+	float _sensors_v_fov{0.785398163397448};
+	uint8_t _sensors_rotation[10]{};
 	uint8_t _sensors_resolution{VL53L8_RESOLUTION_4x4}; // Default resolution for VL53L8
 	uint8_t _sensors_count{0}; // Default number of sensors
 	uint8_t _buffer[sizeof(VL_Range_Data_s<VL53L8_RESOLUTION_8x8>) * 6];
