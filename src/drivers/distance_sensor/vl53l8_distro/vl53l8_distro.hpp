@@ -16,12 +16,17 @@
 #include <px4_platform_common/defines.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 
+#include <uORB/PublicationMulti.hpp>
+#include <uORB/topics/distance_sensor_matrix.h>
+
 #include <px4_platform_common/Serial.hpp>
 
 #include "uart_protocol.h"
 
 using namespace device;
 using namespace time_literals;
+
+#define VL53L8_DISTRO_MAX_SENSOR_COUNT	6
 
 class VL53L8_Distro : public px4::ScheduledWorkItem
 {
@@ -103,11 +108,42 @@ private:
 	float _sensors_max_distance{4.0f};
 	float _sensors_h_fov{0.785398163397448};
 	float _sensors_v_fov{0.785398163397448};
-	uint8_t _sensors_rotation[10]{};
+	uint8_t _sensors_rotation[VL53L8_DISTRO_MAX_SENSOR_COUNT]{};
 	uint8_t _sensors_resolution{VL53L8_RESOLUTION_4x4}; // Default resolution for VL53L8
-	uint8_t _sensors_count{0}; // Default number of sensors
-	uint8_t _buffer[sizeof(VL_Range_Data_s<VL53L8_RESOLUTION_8x8>) * 6];
+	uint8_t _sensors_count{0};
+	uint8_t _buffer[sizeof(VL_Range_Data_s<VL53L8_RESOLUTION_8x8>) * VL53L8_DISTRO_MAX_SENSOR_COUNT];
 	const uint16_t _buffer_size{sizeof(_buffer)};
+
+	uORB::PublicationMulti<distance_sensor_matrix_s> _distance_sensor_pub[VL53L8_DISTRO_MAX_SENSOR_COUNT] {
+		ORB_ID(distance_sensor_matrix)
+#if VL53L8_DISTRO_MAX_SENSOR_COUNT > 1
+		, ORB_ID(distance_sensor_matrix)
+#endif
+#if VL53L8_DISTRO_MAX_SENSOR_COUNT > 2
+		, ORB_ID(distance_sensor_matrix)
+#endif
+#if VL53L8_DISTRO_MAX_SENSOR_COUNT > 3
+		, ORB_ID(distance_sensor_matrix)
+#endif
+#if VL53L8_DISTRO_MAX_SENSOR_COUNT > 4
+		, ORB_ID(distance_sensor_matrix)
+#endif
+#if VL53L8_DISTRO_MAX_SENSOR_COUNT > 5
+		, ORB_ID(distance_sensor_matrix)
+#endif
+#if VL53L8_DISTRO_MAX_SENSOR_COUNT > 6
+		, ORB_ID(distance_sensor_matrix)
+#endif
+#if VL53L8_DISTRO_MAX_SENSOR_COUNT > 7
+		, ORB_ID(distance_sensor_matrix)
+#endif
+#if VL53L8_DISTRO_MAX_SENSOR_COUNT > 8
+		, ORB_ID(distance_sensor_matrix)
+#endif
+#if VL53L8_DISTRO_MAX_SENSOR_COUNT > 9
+		, ORB_ID(distance_sensor_matrix)
+#endif
+	};
 
 	perf_counter_t _comms_errors{perf_alloc(PC_COUNT, MODULE_NAME": com_err")};
 	perf_counter_t _sample_perf{perf_alloc(PC_ELAPSED, MODULE_NAME": read")};

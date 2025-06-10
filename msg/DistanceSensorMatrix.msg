@@ -5,16 +5,21 @@ uint64 timestamp_sample
 
 uint32 device_id		# unique device ID for the sensor that does not change between power cycles
 
+uint8 seq			# message sequence
+
 uint8 resolution		# 16 or 64
 
 uint8 RESOLUTION_4x4		= 16
 uint8 RESOLUTION_8x8		= 64
 
+int8 temperature		# Sensor temperature in deg C
 float32 min_distance		# Minimum distance the sensor can measure (in m)
 float32 max_distance		# Maximum distance the sensor can measure (in m)
 float32[64] current_distance	# Current distance reading (in m)
 float32[64] variance		# Measurement variance (in m^2), 0 for unknown / invalid readings
-int8[64] signal_quality		# Signal quality in percent (0...100%), where 0 = invalid signal, 100 = perfect signal, and -1 = unknown signal quality.
+uint8[64] signal		# Signal strength, capped at 0xFF
+uint8[64] ambient		# Ambient noise, capped at 0xFF
+uint8[64] status		# Measurement status
 
 float32 h_fov # Sensor horizontal field of view (rad)
 float32 v_fov # Sensor vertical field of view (rad)

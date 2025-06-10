@@ -101,13 +101,13 @@ struct __attribute__((__packed__)) VL_Range_Data_s {
 	uint8_t		seq;
 	uint8_t		resolution = M;
 	uint64_t	timestamp;
-	int8_t		silicon_temp;	// deg C
+	int8_t		silicon_temp;		// deg C
 //	uint8_t		targets[M];		// number of valid targets detected per zone
-	int16_t		distance[M];	// Distance to target									(RAW / 4) = mm
-	uint16_t	range_sigma[M];	// Sigma of measured distances							(RAW / 128) = mm
-//	uint8_t		reflectance[M];	// Estimated reflectance in %							RAW /= 2
-//	uint32_t	ambient[M];		// Ambient noise in kcps/spads							RAW /= 2048
-	uint8_t		ambient[M];		// Ambient noise in kcps/spads							(RAW /= 2048) - max 0xFF
+	int16_t		distance[M];		// Distance to target						(RAW / 4) = mm
+	uint16_t	range_sigma[M];		// Sigma of measured distances					(RAW / 128) = mm
+//	uint8_t		reflectance[M];		// Estimated reflectance in %					RAW /= 2
+//	uint32_t	ambient[M];		// Ambient noise in kcps/spads					RAW /= 2048
+	uint8_t		ambient[M];		// Ambient noise in kcps/spads					(RAW /= 2048) - max 0xFF
 //	uint32_t	signal[M];		// Signal returned to the sensor in kcps/spads			RAW /= 2048
 	uint8_t		signal[M];		// Signal returned to the sensor in kcps/spads			(RAW /= 2048) - max 0xFF
 	uint8_t		status[M];		// Status of measurment:  5 & 9 are OK; 255 if nothing
