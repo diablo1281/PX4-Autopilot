@@ -307,7 +307,7 @@ void VL53L8_Distro::Run()
         send_timesync();
     }
 
-    if(collect(1_s) != PX4_OK) {
+    if(collect(500_ms) != PX4_OK) {
         PX4_WARN("Desync detected...");
         measure(UART_PROT_CMD_RNG_STOP, false);
         px4_usleep(200_ms);
