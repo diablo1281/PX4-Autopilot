@@ -126,7 +126,7 @@ PARAM_DEFINE_INT32(SDLOG_MISSION, 0);
  * 7 : Topics for computer vision and collision avoidance
  * 8 : Raw FIFO high-rate IMU (Gyro)
  * 9 : Raw FIFO high-rate IMU (Accel)
- * 10: Logging of mavlink tunnel message (useful for payload communication debugging)
+ * 10: Logging VL53L8 Distro data
  *
  * @min 0
  * @max 2047
@@ -140,7 +140,7 @@ PARAM_DEFINE_INT32(SDLOG_MISSION, 0);
  * @bit 7 Computer Vision and Avoidance
  * @bit 8 Raw FIFO high-rate IMU (Gyro)
  * @bit 9 Raw FIFO high-rate IMU (Accel)
- * @bit 10 Mavlink tunnel message logging
+ * @bit 10 VL53L8 Distro data
  * @reboot_required true
  * @group SD Logging
  */

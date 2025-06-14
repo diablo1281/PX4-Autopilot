@@ -406,6 +406,12 @@ void LoggedTopics::add_mavlink_tunnel()
 	add_topic("mavlink_tunnel");
 }
 
+void LoggedTopics::add_vl_distro()
+{
+	PX4_INFO("Adding VL_DISTRO to logs");
+	add_topic_multi("distance_sensor_matrix");
+}
+
 int LoggedTopics::add_topics_from_file(const char *fname)
 {
 	int ntopics = 0;
@@ -613,7 +619,11 @@ void LoggedTopics::initialize_configured_topics(SDLogProfileMask profile)
 		add_raw_imu_accel_fifo();
 	}
 
-	if (profile & SDLogProfileMask::MAVLINK_TUNNEL) {
-		add_mavlink_tunnel();
+	// if (profile & SDLogProfileMask::MAVLINK_TUNNEL) {
+	// 	add_mavlink_tunnel();
+	// }
+
+	if (profile & SDLogProfileMask::VL_DISTRO) {
+		add_vl_distro();
 	}
 }
