@@ -13,16 +13,13 @@ uint8 RESOLUTION_4x4		= 16
 uint8 RESOLUTION_8x8		= 64
 
 int8 temperature		# Sensor temperature in deg C
-float32 min_distance		# Minimum distance the sensor can measure (in m)
-float32 max_distance		# Maximum distance the sensor can measure (in m)
-float32[64] current_distance	# Current distance reading (in m)
-float32[64] variance		# Measurement variance (in m^2), 0 for unknown / invalid readings
+#float32[64] distances		# Current distances reading (in m)
+int16[64] distance_raw		# Current distances reading (RAW / 4 = mm)
+#float32[64] variance		# Measurement variance (in m^2), 0 for unknown / invalid readings
+uint16[64] variance_raw		# Measurement variance (RAW / 128 = mm)
 uint8[64] signal		# Signal strength, capped at 0xFF
 uint8[64] ambient		# Ambient noise, capped at 0xFF
 uint8[64] status		# Measurement status
-
-float32 h_fov # Sensor horizontal field of view (rad)
-float32 v_fov # Sensor vertical field of view (rad)
 
 uint8 orientation		# Direction the sensor faces from MAV_SENSOR_ORIENTATION enum
 

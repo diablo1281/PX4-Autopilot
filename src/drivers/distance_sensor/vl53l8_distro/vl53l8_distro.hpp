@@ -14,7 +14,7 @@
 #include <lib/perf/perf_counter.h>
 #include <px4_platform_common/px4_config.h>
 #include <px4_platform_common/defines.h>
-#include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
+	#include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 
 #include <uORB/PublicationMulti.hpp>
 #include <uORB/topics/distance_sensor_matrix.h>
@@ -86,13 +86,18 @@ private:
 
 	int get_sensors_resolution();
 
-	int measure(uint8_t command);
+	int measure(uint8_t command, bool ack = true);
+
+	int send_timesync();
 
 	int read_packet(PacketType &packet_type, uint32_t timeout_us = 0);
 
 	int read_ACK(CMD_short_s &msg, uint32_t timeout_us = 0);
 
 	int read_data(uint32_t timeout_us = 0);
+
+	template <size_t M>
+	bool parse_and_fill(VL_Range_Data_s<M> *data, distance_sensor_matrix_s &msg);
 
 	char 	_port[20]{};
 	Serial	_uart{};
@@ -104,15 +109,14 @@ private:
 
 	bool _ranging_in_progress{false}; // Flag to indicate if a ranging operation is in progress
 
-	float _sensors_min_distance{0.04f};
-	float _sensors_max_distance{4.0f};
-	float _sensors_h_fov{0.785398163397448};
-	float _sensors_v_fov{0.785398163397448};
 	uint8_t _sensors_rotation[VL53L8_DISTRO_MAX_SENSOR_COUNT]{};
 	uint8_t _sensors_resolution{VL53L8_RESOLUTION_4x4}; // Default resolution for VL53L8
 	uint8_t _sensors_count{0};
+	uint32_t _sensors_device_id[VL53L8_DISTRO_MAX_SENSOR_COUNT]{};
 	uint8_t _buffer[sizeof(VL_Range_Data_s<VL53L8_RESOLUTION_8x8>) * VL53L8_DISTRO_MAX_SENSOR_COUNT];
 	const uint16_t _buffer_size{sizeof(_buffer)};
+
+	hrt_abstime _last_sync_time{};
 
 	uORB::PublicationMulti<distance_sensor_matrix_s> _distance_sensor_pub[VL53L8_DISTRO_MAX_SENSOR_COUNT] {
 		ORB_ID(distance_sensor_matrix)
