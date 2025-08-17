@@ -74,6 +74,15 @@ publications:
   - topic: /fmu/out/vehicle_trajectory_waypoint_desired
     type: px4_msgs::msg::VehicleTrajectoryWaypoint
 
+  - topic: /fmu/out/camera_trigger
+    type: px4_msgs::msg::CameraTrigger
+
+  - topic: /fmu/out/mavlink_log
+    type: px4_msgs::msg::MavlinkLog
+
+  - topic: /fmu/out/vehicle_command
+    type: px4_msgs::msg::VehicleCommand
+
 # Create uORB::Publication
 subscriptions:
   - topic: /fmu/in/register_ext_component_request
