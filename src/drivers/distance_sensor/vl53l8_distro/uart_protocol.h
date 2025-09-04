@@ -29,7 +29,9 @@
 #define UART_PROT_CMD_RNG_STOP		0x04
 #define UART_PROT_CMD_RNG_SINGLE	0x05
 #define UART_PROT_CMD_SENSOR_RES	0x11
-#define UART_PROT_CMD_TARGET_ORD	0x12
+#define UART_PROT_CMD_TIMING_BUDGET	0x12
+#define UART_PROT_CMD_FREQUENCY		0x13
+#define UART_PROT_CMD_TARGET_ORD	0x14
 #define UART_PROT_CMD_TIMESYNC		0x21
 
 #define UART_PROT_CMD_DATA_READY	0x30
@@ -96,7 +98,7 @@ template <size_t M>
 struct __attribute__((__packed__)) VL_Range_Data_s {
 	uint8_t		header_1 = UART_PROT_MSG_HEADER_1;		// ->
 	uint8_t		header_2 = UART_PROT_MSG_HEADER_2;		// - > HEADER
-	uint16_t	packet_len = 11 + (M * 7) + UART_PROT_MSG_CRC_LEN;	// ->	only payload, with CRC
+	uint16_t	packet_len = 12 + (M * 7) + UART_PROT_MSG_CRC_LEN;	// ->	only payload, with CRC
 	uint8_t		sensor_id;
 	uint8_t		seq;
 	uint8_t		resolution = M;

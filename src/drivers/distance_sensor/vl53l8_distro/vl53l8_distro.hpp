@@ -21,6 +21,8 @@
 
 #include <px4_platform_common/Serial.hpp>
 
+#include "ring_buffer.hpp"
+
 #include "uart_protocol.h"
 
 using namespace device;
@@ -43,8 +45,8 @@ enum PacketType : uint8_t {
 public:
 	/**
 	 * Default Constructor
-	 * @param serial_port The serial port to open for communicating with the sensor.
-	 * @param rotation The sensor rotation relative to the vehicle body.
+	 * @param path The serial port to open for communicating with the sensor.
+	 * @param baudrate Baudrate for selected serial port.
 	 */
 	VL53L8_Distro(const char *path, int baudrate);
 	~VL53L8_Distro() override;
@@ -57,6 +59,8 @@ private:
 	 * Reads data from serial UART and places it into a buffer.
 	 */
 	int collect(uint32_t timeout_us = 110_ms);
+	// Wariant strumieniowy oparty o ring buffer (polecany do pracy ciągłej):
+	int collect_streaming(uint32_t timeout_us = 110_ms);
 
 	/**
 	 * Perform a reading cycle; collect from the previous measurement
@@ -91,6 +95,8 @@ private:
 	int send_timesync();
 
 	int read_packet(PacketType &packet_type, uint32_t timeout_us = 0);
+	// Pompuje UART -> ring buffer małymi porcjami
+	size_t pump_uart_to_ring(uint32_t slice_timeout_us = 1000);
 
 	int read_ACK(CMD_short_s &msg, uint32_t timeout_us = 0);
 
@@ -103,6 +109,10 @@ private:
 	Serial	_uart{};
 	speed_t _port_baudrate{1000000};
 
+	// RX ring — wystarcza na kilka pakietów 8x8 + zapas
+	static constexpr size_t RX_RB_SIZE = 8192;
+	RingBuffer<RX_RB_SIZE> _rx;
+
 	bool _task_should_exit{false};
 
 	bool _is_initialized{false};
@@ -111,9 +121,10 @@ private:
 
 	uint8_t _sensors_rotation[VL53L8_DISTRO_MAX_SENSOR_COUNT]{};
 	uint8_t _sensors_resolution{VL53L8_RESOLUTION_4x4}; // Default resolution for VL53L8
+	uint8_t _sensors_frequency{10}; // Default frequency for VL53L8
 	uint8_t _sensors_count{0};
 	uint32_t _sensors_device_id[VL53L8_DISTRO_MAX_SENSOR_COUNT]{};
-	uint8_t _buffer[sizeof(VL_Range_Data_s<VL53L8_RESOLUTION_8x8>) * VL53L8_DISTRO_MAX_SENSOR_COUNT];
+	uint8_t _buffer[UART_PROT_MSG_MAX_SIZE * 2];
 	const uint16_t _buffer_size{sizeof(_buffer)};
 
 	hrt_abstime _last_sync_time{};

@@ -77,7 +77,7 @@ static constexpr wq_config_t hp_default{"wq:hp_default", 2800, -18};
 static constexpr wq_config_t uavcan{"wq:uavcan", 3624, -19};
 
 static constexpr wq_config_t ttyS0{"wq:ttyS0", 1728, -21};
-static constexpr wq_config_t ttyS1{"wq:ttyS1", 2048, -22};	// 1728
+static constexpr wq_config_t ttyS1{"wq:ttyS1", 2560, -22};	// 1728
 static constexpr wq_config_t ttyS2{"wq:ttyS2", 1728, -23};
 static constexpr wq_config_t ttyS3{"wq:ttyS3", 1728, -24};
 static constexpr wq_config_t ttyS4{"wq:ttyS4", 1728, -25};
