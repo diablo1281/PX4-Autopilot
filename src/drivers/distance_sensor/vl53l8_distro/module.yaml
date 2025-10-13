@@ -11,26 +11,43 @@ serial_config:
 parameters:
     - group: Sensors
       definitions:
-        VL_DISTRO_RES:
+        VL_D_OUT_RES:
             description:
-                short: Resolution of the VL53L8 sensor
+                short: Resolution of the outer VL53L8 sensor
                 long: |
                     The VL53L8 sensor can operate at different resolutions, affecting the accuracy and range.
+                    This set resolution for outward looking sensors.
             type: enum
             values:
+                0: Board default
                 16: 4x4
                 64: 8x8
             reboot_required: true
             num_instances: 1
             default: 64
 
-        VL_D_RNG_FREQ:
+        VL_D_IN_RES:
             description:
-                short: Ranging frequency VL53L8 sensor
+                short: Resolution of the outer VL53L8 sensor
+                long: |
+                    The VL53L8 sensor can operate at different resolutions, affecting the accuracy and range.
+                    This set resolution for inward looking sensors.
+            type: enum
+            values:
+                0: Board default
+                16: 4x4
+                64: 8x8
+            reboot_required: true
+            num_instances: 1
+            default: 64
+
+        VL_D_OUT_FREQ:
+            description:
+                short: Ranging frequency of outward looking VL53L8 sensors
                 long: |
                     The VL53L8 sensor can operate at different frequency, affecting the accuracy and range.
-                    For 4x4 resolution, the valid range is 2-60 Hz.
-                    For 8x8 resolution, the valid range is 2-25 Hz.
+                    For 4x4 resolution, the valid range is 1-60 Hz.
+                    For 8x8 resolution, the valid range is 1-15 Hz.
             type: int32
             min: 2
             max: 60
@@ -39,9 +56,54 @@ parameters:
             num_instances: 1
             default: 10
 
+        VL_D_IN_FREQ:
+            description:
+                short: Ranging frequency of inward looking VL53L8 sensors
+                long: |
+                    The VL53L8 sensor can operate at different frequency, affecting the accuracy and range.
+                    For 4x4 resolution, the valid range is 1-60 Hz.
+                    For 8x8 resolution, the valid range is 1-15 Hz.
+            type: int32
+            min: 2
+            max: 60
+            unit: Hz
+            reboot_required: true
+            num_instances: 1
+            default: 10
+
+        VL_D_OUT_TARGET:
+            description:
+                short: Target order of the outer VL53L8 sensor
+                long: |
+                    The VL53L8 sensor can return ranging results for CLOSEST detected object or the STRONGEST returned signal from object.
+                    This set resolution for outward looking sensors.
+            type: enum
+            values:
+                0: Board default
+                1: Closest
+                2: Strongest
+            reboot_required: true
+            num_instances: 1
+            default: 2
+
+        VL_D_IN_TARGET:
+            description:
+                short: Target order of the inner VL53L8 sensor
+                long: |
+                    The VL53L8 sensor can return ranging results for CLOSEST detected object or the STRONGEST returned signal from object.
+                    This set resolution for inward looking sensors.
+            type: enum
+            values:
+                0: Board default
+                1: Closest
+                2: Strongest
+            reboot_required: true
+            num_instances: 1
+            default: 2
+
         VL_D_${i}_ORIENT:
             description:
-                short: Orientation of VL53L8 SENSOR ${i}
+                short: Orientation of outward looking VL53L8 SENSOR ${i}
                 long: |
                     Orientation of sensor connected to the connector ${i} on VL53L8 Distro board.
             type: enum

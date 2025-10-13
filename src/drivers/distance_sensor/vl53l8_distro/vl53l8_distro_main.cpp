@@ -113,7 +113,7 @@ usage()
 extern "C" __EXPORT int vl53l8_distro_main(int argc, char *argv[])
 {
 	const char *device_path = nullptr;
-	int baudrate = 0;
+	int baudrate = 1000000; // Default baudrate
 	int ch;
 	int myoptind = 1;
 	const char *myoptarg = nullptr;

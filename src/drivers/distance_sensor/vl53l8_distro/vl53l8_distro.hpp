@@ -98,7 +98,9 @@ private:
 	// Pompuje UART -> ring buffer małymi porcjami
 	size_t pump_uart_to_ring(uint32_t slice_timeout_us = 1000);
 
-	int read_ACK(CMD_short_s &msg, uint32_t timeout_us = 0);
+	int send_command(uint8_t cmd, uint8_t &value, bool ack = false, uint32_t timeout_us = 100_ms);
+
+	int read_ACK(uint8_t &value, uint32_t timeout_us = 100_ms);
 
 	int read_data(uint32_t timeout_us = 0);
 
@@ -115,13 +117,19 @@ private:
 
 	bool _task_should_exit{false};
 
+	uint32_t _task_interval{100_ms};
+
 	bool _is_initialized{false};
 
 	bool _ranging_in_progress{false}; // Flag to indicate if a ranging operation is in progress
 
 	uint8_t _sensors_rotation[VL53L8_DISTRO_MAX_SENSOR_COUNT]{};
-	uint8_t _sensors_resolution{VL53L8_RESOLUTION_4x4}; // Default resolution for VL53L8
-	uint8_t _sensors_frequency{10}; // Default frequency for VL53L8
+	uint8_t _sensors_out_resolution{VL53L8_RESOLUTION_4x4}; // Default resolution for VL53L8
+	uint8_t _sensors_in_resolution{VL53L8_RESOLUTION_4x4}; // Default resolution for VL53L8
+	uint8_t _sensors_out_frequency{10}; // Default frequency for VL53L8
+	uint8_t _sensors_in_frequency{10}; // Default frequency for VL53L8
+	uint8_t _sensors_out_target_order{UART_PROT_TARGET_ORDER_STRONGEST}; // Default target order for VL53L8
+	uint8_t _sensors_in_target_order{UART_PROT_TARGET_ORDER_STRONGEST}; // Default target order for VL53L8
 	uint8_t _sensors_count{0};
 	uint32_t _sensors_device_id[VL53L8_DISTRO_MAX_SENSOR_COUNT]{};
 	uint8_t _buffer[UART_PROT_MSG_MAX_SIZE * 2];

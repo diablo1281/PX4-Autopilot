@@ -61,21 +61,45 @@ VL53L8_Distro::~VL53L8_Distro()
 
 int VL53L8_Distro::init()
 {
-    int32_t resolution = 0;
-    param_get(param_find("VL_DISTRO_RES"), &resolution);
-
-    if(resolution > 0) {
-        _sensors_resolution = (uint8_t) resolution;
+    int32_t param = 0;
+    param_get(param_find("VL_D_OUT_RES"), &param);
+    if(param > 0) {
+        _sensors_out_resolution = (uint8_t) param;
     } else {
-        PX4_ERR("Error reading `VL_DISTRO_RES` parameter!");
+        PX4_ERR("Error reading `VL_D_OUT_RES` parameter!");
+    }
+    param_get(param_find("VL_D_IN_RES"), &param);
+    if(param > 0) {
+        _sensors_in_resolution = (uint8_t) param;
+    } else {
+        PX4_ERR("Error reading `VL_D_IN_RES` parameter!");
     }
 
-    int32_t frequency = 0;
-    param_get(param_find("VL_D_RNG_FREQ"), &frequency);
-    if(frequency > 0) {
-        _sensors_frequency = (uint8_t) frequency;
+    param_get(param_find("VL_D_OUT_FREQ"), &param);
+    if(param > 0) {
+        _sensors_out_frequency = (uint8_t) param;
+        _task_interval = 1_s / _sensors_out_frequency;
     } else {
-        PX4_ERR("Error reading `VL_DISTRO_RES` parameter!");
+        PX4_ERR("Error reading `VL_D_OUT_FREQ` parameter!");
+    }
+    param_get(param_find("VL_D_IN_FREQ"), &param);
+    if(param > 0) {
+        _sensors_in_frequency = (uint8_t) param;
+    } else {
+        PX4_ERR("Error reading `VL_D_IN_FREQ` parameter!");
+    }
+
+    param_get(param_find("VL_D_OUT_TARGET"), &param);
+    if(param > 0) {
+        _sensors_out_target_order = (uint8_t) param;
+    } else {
+        PX4_ERR("Error reading `VL_D_OUT_TARGET` parameter!");
+    }
+    param_get(param_find("VL_D_IN_TARGET"), &param);
+    if(param > 0) {
+        _sensors_in_target_order = (uint8_t) param;
+    } else {
+        PX4_ERR("Error reading `VL_D_IN_TARGET` parameter!");
     }
 
     int32_t orientation = 0;
@@ -157,7 +181,7 @@ int VL53L8_Distro::collect(uint32_t timeout_us)
             return PX4_ERROR;
         }
 
-        const size_t packet_size = (_sensors_resolution == VL53L8_RESOLUTION_8x8)
+        const size_t packet_size = (_sensors_out_resolution == VL53L8_RESOLUTION_8x8)
                          ? sizeof(VL_Range_Data_s<VL53L8_RESOLUTION_8x8>)
                          : sizeof(VL_Range_Data_s<VL53L8_RESOLUTION_4x4>);
         if ((read_idx + packet_size) > (uint16_t)bytes_read) {
@@ -173,8 +197,8 @@ int VL53L8_Distro::collect(uint32_t timeout_us)
         //     PX4_WARN("Desync detected: [ %u - %u ]", ((VL_Range_Data_s<VL53L8_RESOLUTION_4x4> *)&_buffer[read_idx])->seq, seq_check);
         // }
 
-        if(((VL_Range_Data_s<VL53L8_RESOLUTION_4x4> *)&_buffer[read_idx])->resolution != _sensors_resolution) {
-            PX4_ERR("Wrong resolution: [ %u != %u ]", ((VL_Range_Data_s<VL53L8_RESOLUTION_4x4> *)&_buffer[read_idx])->resolution, _sensors_resolution);
+        if(((VL_Range_Data_s<VL53L8_RESOLUTION_4x4> *)&_buffer[read_idx])->resolution != _sensors_out_resolution) {
+            PX4_ERR("Wrong resolution: [ %u != %u ]", ((VL_Range_Data_s<VL53L8_RESOLUTION_4x4> *)&_buffer[read_idx])->resolution, _sensors_out_resolution);
             perf_count(_comms_errors);
             read_idx++;
             continue;
@@ -310,17 +334,19 @@ void VL53L8_Distro::Run()
             return;
         }
 
-        ScheduleDelayed(120_ms); // Schedule the next reading cycle
+        // ScheduleDelayed(120_ms); // Schedule the next reading cycle
+        // ScheduleOnInterval(_task_interval, _task_interval); // Schedule the next reading cycle
+        ScheduleNow();
         return;
     }
 
-    if(hrt_elapsed_time(&_last_sync_time) > 1_s) {
+    if(hrt_elapsed_time(&_last_sync_time) > 10_s) {
         send_timesync();
     }
 
     // if(collect(500_ms) != PX4_OK) {
-    if(collect_streaming(2_s / _sensors_frequency) != PX4_OK) {
-        PX4_WARN("Desync detected...");
+    if(collect_streaming(2_s) != PX4_OK) {
+        // PX4_WARN("Desync detected...");
         // measure(UART_PROT_CMD_RNG_STOP, false);
         // px4_usleep(200_ms);
         // int bytes_read = 1;
@@ -330,11 +356,11 @@ void VL53L8_Distro::Run()
         // open_serial_port();
         // send_timesync();
         // measure(UART_PROT_CMD_RNG_START);
-        _rx.clear();
+        // _rx.clear();
         send_timesync();
-        ScheduleDelayed(20_ms); // Schedule the next reading cycle
-        perf_end(_sample_perf);
-        return;
+        // ScheduleDelayed(20_ms); // Schedule the next reading cycle
+        // perf_end(_sample_perf);
+        // return;
     }
 
     ScheduleNow();
@@ -366,100 +392,113 @@ int VL53L8_Distro::initialize_sensor() {
     if(!_is_initialized) {
         PX4_INFO("VL53L8_Distro not initialized, starting initialization");
 
-        CMD_short_s msg{};
-        int ret;
+        uint8_t cmd_value = 0;
         uint8_t retry = 0;
+        uint8_t max_retries = 5;
 
-        while (retry < 5)
+        while (retry < max_retries)
         {
-            msg.cmd = UART_PROT_CMD_IS_ALIVE;
-            msg.value = 0; // No specific value needed for this command
-            msg.calculate_crc(true);
-            ret = _uart.write((const void *)&msg, sizeof(msg));
-            // PX4_INFO("Wrote %d bytes to port %s for checking if it'a alive", ret, _port);
-            if (ret <= 0) {
-                PX4_ERR("write failed: %d (%s)", errno, strerror(errno));
-                perf_count(_comms_errors);
+            //Send the "Is Alive" command and wait for ACK
+            cmd_value = 0;
+            if(send_command(UART_PROT_CMD_IS_ALIVE, cmd_value, true, 10_ms) == PX4_OK) {
+                break; // Exit the loop if the sensor is alive
+            };
+
+            PX4_ERR("Sensor not responding, retrying... [%d]", retry + 1);
+
+            retry++;
+
+            if(retry >= max_retries) {
+                PX4_ERR("Max retries reached, sensor not responding");
                 return PX4_ERROR;
             }
 
-            // Wait for the ACK response
-            PacketType packet_type;
-            ret = read_packet(packet_type, 10_ms);
-            if (ret < 0) {
-                PX4_ERR("Failed to read ACK response: %d (%s)", errno, strerror(errno));
-                perf_count(_comms_errors);
-                // return PX4_ERROR;
-            } else if (packet_type != PacketType::CMD_Short && (((CMD_short_s *)&_buffer[0])->cmd != UART_PROT_CMD_STATUS_ACK)) {
-                PX4_ERR("No ACK response received");
-                perf_count(_comms_errors);
-                // return PX4_ERROR;
-            } else {
-                PX4_INFO("VL53L8_Distro is alive on port: %s", _port);
-                break; // Exit the loop if the sensor is alive
-            }
-
-            retry++;
             px4_sleep(1); // Wait for a second before retrying
         }
 
         send_timesync();
 
-        msg.cmd = UART_PROT_CMD_FREQUENCY;
-        msg.value = _sensors_frequency; // Set the ranging freq for sensor
-        msg.calculate_crc(true);
-        ret = _uart.write((const void *)&msg, sizeof(msg));
-        if (ret <= 0) {
-            PX4_ERR("write failed: %d (%s)", errno, strerror(errno));
-            perf_count(_comms_errors);
+        // Set OUT sensors
+        cmd_value = _sensors_out_resolution;
+        if(send_command(UART_PROT_CMD_OUT_SENSOR_RES, cmd_value, true, 1_s) != PX4_OK) {
+            PX4_ERR("Failed to set OUT resolution");
             return PX4_ERROR;
-        }
-
-        // Wait for the ACK response from freq command
-        PacketType packet_type;
-        ret = read_packet(packet_type, 10_s);
-        if (ret < 0) {
-            PX4_ERR("Failed to read ACK response: %d (%s)", errno, strerror(errno));
-            perf_count(_comms_errors);
-            return PX4_ERROR;
-        } else if (packet_type != PacketType::CMD_Short && (((CMD_short_s *)&_buffer[0])->cmd != UART_PROT_CMD_STATUS_ACK)) {
-            PX4_ERR("No ACK response received");
-            perf_count(_comms_errors);
-            return PX4_ERROR;
-        }
-        if(((CMD_short_s *)&_buffer[0])->value != _sensors_frequency) {
-            PX4_ERR("Failed to set ranging frequency to %d Hz [%d]", _sensors_frequency, ((CMD_short_s *)&_buffer[0])->value);
-            perf_count(_comms_errors);
+        } else if(cmd_value != _sensors_out_resolution) {
+            PX4_ERR("Failed to set ranging resolution to %d [%d] for OUT", _sensors_out_resolution, cmd_value);
             return PX4_ERROR;
         } else {
-            PX4_INFO("Ranging frequency set to %d Hz", _sensors_frequency);
+            PX4_INFO("Ranging resolution set to %d for OUT", _sensors_out_resolution);
         }
 
-        msg.cmd = UART_PROT_CMD_SENSOR_INIT;
-        msg.value = _sensors_resolution; // Set the resolution for sensor initialization
-        msg.calculate_crc(true);
+        cmd_value = _sensors_out_frequency;
+        if(send_command(UART_PROT_CMD_OUT_FREQUENCY, cmd_value, true, 1_s) != PX4_OK) {
+            PX4_ERR("Failed to set OUT frequency");
+            return PX4_ERROR;
+        } else if(cmd_value != _sensors_out_frequency) {
+            PX4_ERR("Failed to set ranging frequency to %d Hz [%d] for OUT", _sensors_out_frequency, cmd_value);
+            return PX4_ERROR;
+        } else {
+            PX4_INFO("Ranging frequency set to %d Hz for OUT", _sensors_out_frequency);
+        }
+
+        cmd_value = _sensors_out_target_order;
+        if(send_command(UART_PROT_CMD_OUT_TARGET_ORD, cmd_value, true, 1_s) != PX4_OK) {
+            PX4_ERR("Failed to set OUT target order");
+            return PX4_ERROR;
+        } else if(cmd_value != _sensors_out_target_order) {
+            PX4_ERR("Failed to set target order to %d [%d] for OUT", _sensors_out_target_order, cmd_value);
+            return PX4_ERROR;
+        } else {
+            PX4_INFO("Target order set to %s for OUT", (_sensors_out_target_order == UART_PROT_TARGET_ORDER_STRONGEST) ? "STRONGEST" : "CLOSEST");
+        }
+
+        // Set IN sensors
+        cmd_value = _sensors_in_resolution;
+        if(send_command(UART_PROT_CMD_IN_SENSOR_RES, cmd_value, true, 1_s) != PX4_OK) {
+            PX4_ERR("Failed to set IN resolution");
+            return PX4_ERROR;
+        } else if(cmd_value != _sensors_in_resolution) {
+            PX4_ERR("Failed to set ranging resolution to %d [%d] for IN", _sensors_in_resolution, cmd_value);
+            return PX4_ERROR;
+        } else {
+            PX4_INFO("Ranging resolution set to %d for IN", _sensors_in_resolution);
+        }
+
+        cmd_value = _sensors_in_frequency;
+        if(send_command(UART_PROT_CMD_IN_FREQUENCY, cmd_value, true, 1_s) != PX4_OK) {
+            PX4_ERR("Failed to set IN frequency");
+            return PX4_ERROR;
+        } else if(cmd_value != _sensors_in_frequency) {
+            PX4_ERR("Failed to set ranging frequency to %d Hz [%d] for IN", _sensors_in_frequency, cmd_value);
+            return PX4_ERROR;
+        } else {
+            PX4_INFO("Ranging frequency set to %d Hz for IN", _sensors_in_frequency);
+        }
+
+        cmd_value = _sensors_in_target_order;
+        if(send_command(UART_PROT_CMD_IN_TARGET_ORD, cmd_value, true, 1_s) != PX4_OK) {
+            PX4_ERR("Failed to set IN target order");
+            return PX4_ERROR;
+        } else if(cmd_value != _sensors_in_target_order) {
+            PX4_ERR("Failed to set target order to %d [%d] for IN", _sensors_in_target_order, cmd_value);
+            return PX4_ERROR;
+        } else {
+            PX4_INFO("Target order set to %s for IN", (_sensors_in_target_order == UART_PROT_TARGET_ORDER_STRONGEST) ? "STRONGEST" : "CLOSEST");
+        }
+
         // Send the sensor initialization command
-        ret = _uart.write((const void *)&msg, sizeof(msg));
-        // PX4_INFO("Wrote %d bytes to port %s for sensor initialization", ret, _port);
-        if (ret <= 0) {
-            PX4_ERR("write failed: %d (%s)", errno, strerror(errno));
-            perf_count(_comms_errors);
+        cmd_value = 0x00; // Use resolution set before for sensor initialization
+        if(send_command(UART_PROT_CMD_SENSOR_INIT, cmd_value, true, 20_s) != PX4_OK) {
+            PX4_ERR("Failed to initialize sensors");
             return PX4_ERROR;
         }
 
-        // Wait for the ACK response from initialization command
-        ret = read_packet(packet_type, 10_s);
-        if (ret < 0) {
-            PX4_ERR("Failed to read ACK response: %d (%s)", errno, strerror(errno));
-            perf_count(_comms_errors);
-            return PX4_ERROR;
-        } else if (packet_type != PacketType::CMD_Short && (((CMD_short_s *)&_buffer[0])->cmd != UART_PROT_CMD_STATUS_ACK)) {
-            PX4_ERR("No ACK response received");
-            perf_count(_comms_errors);
+        if(cmd_value == 0 || cmd_value > VL53L8_DISTRO_MAX_SENSOR_COUNT) {
+            PX4_ERR("Invalid number of sensors detected: %d", cmd_value);
             return PX4_ERROR;
         }
 
-        _sensors_count = ((CMD_short_s *)&_buffer[0])->value;
+        _sensors_count = cmd_value;
         PX4_INFO("VL53L8_Distro initialized successfully on port: %s [sensors: %d]", _port, _sensors_count);
         this->_is_initialized = true;
     } else {
@@ -475,34 +514,15 @@ int VL53L8_Distro::get_sensors_resolution() {
         return PX4_ERROR;
     }
 
-    CMD_short_s msg{};
-    msg.cmd = UART_PROT_CMD_SENSOR_RES;
-    msg.value = 0; // Value 0x00 for reading the sensors resolution
-    msg.calculate_crc(true);
+    uint8_t cmd_value = 0;
 
-    int ret = _uart.write((const void *)&msg, sizeof(msg));
-    // PX4_INFO("Wrote %d bytes to port %s for getting sensors resolution", ret, _port);
-    if (ret <= 0) {
-        PX4_ERR("write failed: %d (%s)", errno, strerror(errno));
-        perf_count(_comms_errors);
+    if(send_command(UART_PROT_CMD_OUT_SENSOR_RES, cmd_value, true, 1_s) != PX4_OK) {
+        PX4_ERR("Failed to get OUT sensors resolution");
         return PX4_ERROR;
     }
 
-    // Wait for the ACK response
-    PacketType packet_type;
-    ret = read_packet(packet_type, 5_ms);
-    if (ret < 0) {
-        PX4_ERR("Failed to read ACK response: %d (%s)", errno, strerror(errno));
-        perf_count(_comms_errors);
-        return PX4_ERROR;
-    } else if (packet_type != PacketType::CMD_Short && (((CMD_short_s *)&_buffer[0])->cmd != UART_PROT_CMD_STATUS_ACK)) {
-        PX4_ERR("No ACK response received");
-        perf_count(_comms_errors);
-        return PX4_ERROR;
-    }
-
-    _sensors_resolution = ((CMD_short_s *)&_buffer[0])->value; // Assuming value contains the resolution
-    PX4_INFO("Sensors resolution: %d", _sensors_resolution);
+    _sensors_out_resolution = cmd_value;
+    PX4_INFO("Sensors resolution: %d", _sensors_out_resolution);
 
     return PX4_OK;
 }
@@ -525,35 +545,11 @@ int VL53L8_Distro::measure(uint8_t command, bool ack) {
         return PX4_ERROR;
     }
 
-    CMD_short_s msg{};
-    msg.cmd = command;
-    msg.value = 0; // No specific value needed for this command
-    msg.calculate_crc(true);
+    uint8_t cmd_value = 0;
 
-    int ret = _uart.write((const void *)&msg, sizeof(msg));
-    // PX4_INFO("Wrote %d bytes to port %s for start measurement", ret, _port);
-    if (ret <= 0) {
-        PX4_ERR("write failed: %d (%s)", errno, strerror(errno));
-        perf_count(_comms_errors);
+    if(send_command(command, cmd_value, ack, 100_ms) != PX4_OK) {
+        PX4_ERR("Failed to send measurement command: 0x%02X", command);
         return PX4_ERROR;
-    }
-
-
-    if(ack) {
-        // Wait for the ACK response
-        PacketType packet_type;
-        ret = read_packet(packet_type, 5_ms);
-        if (ret < 0) {
-            PX4_ERR("Failed to read ACK response: %d (%s)", errno, strerror(errno));
-            perf_count(_comms_errors);
-            return PX4_ERROR;
-        } else if (packet_type != PacketType::CMD_Short && (((CMD_short_s *)&_buffer[0])->cmd != UART_PROT_CMD_STATUS_ACK)) {
-            PX4_ERR("No ACK response received");
-            perf_count(_comms_errors);
-            return PX4_ERROR;
-        }
-    } else {
-        _uart.readAtLeast(_buffer, _buffer_size, UART_PROT_MSG_MIN_SIZE, 5_ms);
     }
 
     if(command == UART_PROT_CMD_RNG_START) {
@@ -620,34 +616,80 @@ int VL53L8_Distro::open_serial_port(speed_t speed) {
 	return PX4_OK;
 }
 
-int VL53L8_Distro::read_ACK(CMD_short_s &msg, uint32_t timeout_us) {
-    ssize_t bytes_read = _uart.readAtLeast((uint8_t *)&msg, sizeof(CMD_short_s), sizeof(CMD_short_s), timeout_us);
+int VL53L8_Distro::send_command(uint8_t cmd, uint8_t &value, bool ack, uint32_t timeout_us) {
+    CMD_short_s msg{};
+    msg.cmd = cmd;
+    msg.value = value; // Set the command value
+    msg.calculate_crc(true);
 
-    if(bytes_read < 0) {
-        PX4_ERR("Failed to read ACK from UART: %d (%s)", errno, strerror(errno));
-        perf_count(_comms_errors);
-        return PX4_ERROR;
-    } else if (bytes_read == 0) {
-        PX4_ERR("No ACK read from UART within timeout");
-        perf_count(_comms_errors);
-        return PX4_ERROR;
-    } else if (bytes_read != sizeof(CMD_short_s)) {
-        PX4_ERR("Read %zd bytes, expected %zu bytes for ACK", bytes_read, sizeof(CMD_short_s));
+    int ret = _uart.write((const void *)&msg, sizeof(msg));
+    // PX4_INFO("Wrote %d bytes to port %s for command 0x%02X", ret, _port, cmd);
+    if (ret <= 0) {
+        PX4_ERR("write failed: %d (%s)", errno, strerror(errno));
         perf_count(_comms_errors);
         return PX4_ERROR;
     }
 
-    if(msg.crc != msg.calculate_crc(false)) {
-        PX4_ERR("CRC mismatch for ACK: received: %04X, expected: %04X", msg.crc, msg.calculate_crc(false));
+    ret = read_ACK(value, timeout_us);
+    if(ack) {
+        // Wait for the ACK response
+        if(ret != PX4_OK) {
+            PX4_ERR("Failed to read ACK response for command 0x%02X", cmd);
+            perf_count(_comms_errors);
+            return PX4_ERROR;
+        }
+        // else if(value != msg.value) {
+        //     PX4_ERR("ACK response value mismatch for command 0x%02X: sent %d, received %d", cmd, msg.value, value);
+        //     perf_count(_comms_errors);
+        //     return PX4_ERROR;
+        // }
+    }
+
+    return PX4_OK;
+}
+
+int VL53L8_Distro::read_ACK(uint8_t &value, uint32_t timeout_us) {
+    PacketType packet_type;
+    if (read_packet(packet_type, timeout_us) < 0) {
+        PX4_ERR("Failed to read ACK response: %d (%s)", errno, strerror(errno));
+        perf_count(_comms_errors);
+        return PX4_ERROR;
+    } else if (packet_type != PacketType::CMD_Short && (((CMD_short_s *)&_buffer[0])->cmd != UART_PROT_CMD_STATUS_ACK)) {
+        PX4_ERR("No ACK response received");
         perf_count(_comms_errors);
         return PX4_ERROR;
     }
+
+    value = ((CMD_short_s *)&_buffer[0])->value; // Update the value with the response
+
+
+    // ssize_t bytes_read = _uart.readAtLeast((uint8_t *)&msg, sizeof(CMD_short_s), sizeof(CMD_short_s), timeout_us);
+
+    // if(bytes_read < 0) {
+    //     PX4_ERR("Failed to read ACK from UART: %d (%s)", errno, strerror(errno));
+    //     perf_count(_comms_errors);
+    //     return PX4_ERROR;
+    // } else if (bytes_read == 0) {
+    //     PX4_ERR("No ACK read from UART within timeout");
+    //     perf_count(_comms_errors);
+    //     return PX4_ERROR;
+    // } else if (bytes_read != sizeof(CMD_short_s)) {
+    //     PX4_ERR("Read %zd bytes, expected %zu bytes for ACK", bytes_read, sizeof(CMD_short_s));
+    //     perf_count(_comms_errors);
+    //     return PX4_ERROR;
+    // }
+
+    // if(msg.crc != msg.calculate_crc(false)) {
+    //     PX4_ERR("CRC mismatch for ACK: received: %04X, expected: %04X", msg.crc, msg.calculate_crc(false));
+    //     perf_count(_comms_errors);
+    //     return PX4_ERROR;
+    // }
 
     return PX4_OK; // Successfully read ACK
 }
 
 int VL53L8_Distro::read_data(uint32_t timeout_us) {
-    uint16_t read_size = ((_sensors_resolution == VL53L8_RESOLUTION_8x8) ? sizeof(VL_Range_Data_s<VL53L8_RESOLUTION_8x8>) : sizeof(VL_Range_Data_s<VL53L8_RESOLUTION_4x4>)) * _sensors_count;
+    uint16_t read_size = ((_sensors_out_resolution == VL53L8_RESOLUTION_8x8) ? sizeof(VL_Range_Data_s<VL53L8_RESOLUTION_8x8>) : sizeof(VL_Range_Data_s<VL53L8_RESOLUTION_4x4>)) * _sensors_count;
     ssize_t bytes_read = _uart.readAtLeast(_buffer, read_size, read_size, timeout_us);
     if (bytes_read < 0) {
         PX4_ERR("Failed to read data from UART: %d (%s)", errno, strerror(errno));
@@ -817,7 +859,9 @@ int VL53L8_Distro::collect_streaming(uint32_t timeout_us)
             // CMD_Short / CMD_Long — ACK, timesync itp. — ignorujemy tu
         }
     }
-    // PX4_INFO("Collected data from %u sensors (mask 0b" BYTE_TO_BINARY_PATTERN ")", __builtin_popcount(received_mask), BYTE_TO_BINARY(received_mask));
+    if(received_mask != FULL_MASK) {
+        PX4_WARN("Collected data from %u sensors (mask 0b" BYTE_TO_BINARY_PATTERN ")", __builtin_popcount(received_mask), BYTE_TO_BINARY(received_mask));
+    }
     perf_end(_sample_perf);
     return (received_mask == FULL_MASK) ? PX4_OK : PX4_ERROR;
 }
