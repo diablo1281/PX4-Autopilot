@@ -152,6 +152,7 @@ set(msg_files
 	ObstacleDistance.msg
 	OffboardControlMode.msg
 	OnboardComputerStatus.msg
+	OpticalNavigationVertical.msg
 	OrbitStatus.msg
 	OrbTest.msg
 	OrbTestLarge.msg

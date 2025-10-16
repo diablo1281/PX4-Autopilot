@@ -173,3 +173,9 @@ ms5611 -X start
 
 unset INA_CONFIGURED
 unset HAVE_PM2
+
+# Start Optical Nav on I2C
+if param compare SENS_EN_PAT9136 1
+then
+	pat9136 -X start
+fi

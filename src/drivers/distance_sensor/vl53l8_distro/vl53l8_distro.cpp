@@ -418,6 +418,14 @@ int VL53L8_Distro::initialize_sensor() {
 
         send_timesync();
 
+        cmd_value = 0x00; // Dummy value
+        if(send_command(UART_PROT_CMD_SENSOR_RESET, cmd_value, true, 1_s) != PX4_OK) {
+            PX4_ERR("Failed to stop any ongoing measurement");
+            return PX4_ERROR;
+        } else {
+            PX4_INFO("Sensors reset done");
+        }
+
         // Set OUT sensors
         cmd_value = _sensors_out_resolution;
         if(send_command(UART_PROT_CMD_OUT_SENSOR_RES, cmd_value, true, 1_s) != PX4_OK) {
@@ -860,7 +868,7 @@ int VL53L8_Distro::collect_streaming(uint32_t timeout_us)
         }
     }
     if(received_mask != FULL_MASK) {
-        PX4_WARN("Collected data from %u sensors (mask 0b" BYTE_TO_BINARY_PATTERN ")", __builtin_popcount(received_mask), BYTE_TO_BINARY(received_mask));
+        // PX4_WARN("Collected data from %u sensors (mask 0b" BYTE_TO_BINARY_PATTERN ")", __builtin_popcount(received_mask), BYTE_TO_BINARY(received_mask));
     }
     perf_end(_sample_perf);
     return (received_mask == FULL_MASK) ? PX4_OK : PX4_ERROR;

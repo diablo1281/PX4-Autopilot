@@ -98,6 +98,7 @@
 #include "streams/OPEN_DRONE_ID_LOCATION.hpp"
 #include "streams/OPEN_DRONE_ID_SYSTEM.hpp"
 #include "streams/OPTICAL_FLOW_RAD.hpp"
+#include "streams/OPTICAL_FLOW.hpp"
 #include "streams/ORBIT_EXECUTION_STATUS.hpp"
 #include "streams/PING.hpp"
 #include "streams/POSITION_TARGET_GLOBAL_INT.hpp"
@@ -385,6 +386,9 @@ static const StreamListItem streams_list[] = {
 #if defined(OPTICAL_FLOW_RAD_HPP)
 	create_stream_list_item<MavlinkStreamOpticalFlowRad>(),
 #endif // OPTICAL_FLOW_RAD_HPP
+#if defined(OPTICAL_FLOW_HPP)
+	create_stream_list_item<MavlinkStreamOpticalFlow>(),
+#endif // OPTICAL_FLOW_HPP
 #if defined(NAMED_VALUE_FLOAT_HPP)
 	create_stream_list_item<MavlinkStreamNamedValueFloat>(),
 #endif // NAMED_VALUE_FLOAT_HPP

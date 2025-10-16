@@ -1,0 +1,90 @@
+module_name: PAT9136 Carrier Board (I2C)
+
+parameters:
+    - group: Sensors
+      definitions:
+        SENS_EN_PAT9136:
+            description:
+                short: Enable PAT9136 optical flow sensor by supplying address
+                long: |
+                    Enable the PAT9136 optical flow sensor on the I2C bus. Set to 0 to disable.
+                    Set to the I2C address of the sensor to enable (default is 0x4F).
+            type: int32
+            min: 0
+            reboot_required: true
+            num_instances: 1
+            default: 0x00
+
+        PAT9136_RATE_HZ:
+            description:
+                short: Pooling rate of the PAT9136 sensor
+                long: |
+                    Set the pooling rate of the PAT9136 optical flow sensor in Hertz.
+                    A higher rate provides more frequent updates but increases CPU load.
+            type: float
+            min: 1.0
+            max: 50
+            increment: 1.0
+            decimal: 1
+            reboot_required: true
+            num_instances: 1
+            default: 10.0
+
+        PAT9136_X_CPI:
+            description:
+                short: Resolution of the PAT9136 sensor in counts per inch for X axis
+                long: |
+                    The PAT9136 optical flow sensor has a configurable resolution in counts per inch (CPI).
+                    This parameter sets the resolution of the sensor in X axis.
+            type: float
+            min: 100.0
+            max: 20000.0
+            increment: 100.0
+            decimal: 0
+            reboot_required: true
+            num_instances: 1
+            default: 10000.0
+
+        PAT9136_Y_CPI:
+            description:
+                short: Resolution of the PAT9136 sensor in counts per inch for Y axis
+                long: |
+                    The PAT9136 optical flow sensor has a configurable resolution in counts per inch (CPI).
+                    This parameter sets the resolution of the sensor in Y axis.
+            type: float
+            min: 100.0
+            max: 20000.0
+            increment: 100.0
+            decimal: 0
+            reboot_required: true
+            num_instances: 1
+            default: 10000.0
+
+        PAT9136_ORIENT:
+            description:
+                short: Orientation of the PAT9136 sensor
+                long: |
+                    Set the mounting orientation of the PAT9136 optical flow sensor.
+                    This affects how the sensor data is interpreted in relation to the vehicle's frame.
+            type: bitmask
+            bit:
+                5: Invert X axis
+                6: Invert Y axis
+                7: Swap X and Y axis
+            min: 0
+            max: 0xE0
+            reboot_required: true
+            num_instances: 1
+            default: 0x60
+
+        PAT9136_TEXTURE:
+            description:
+                short: Set texture mode for PAT9136 sensor
+                long: |
+                    The PAT9136 optical flow sensor can operate in different texture modes.
+                    This parameter sets the texture mode for the sensor.
+            type: boolean
+            reboot_required: true
+            num_instances: 1
+            default: false
+
