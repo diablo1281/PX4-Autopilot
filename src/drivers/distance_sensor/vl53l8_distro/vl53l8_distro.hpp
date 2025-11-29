@@ -18,6 +18,7 @@
 
 #include <uORB/PublicationMulti.hpp>
 #include <uORB/topics/distance_sensor_matrix.h>
+#include <uORB/topics/optical_navigation_horizontal.h>
 
 #include <px4_platform_common/Serial.hpp>
 
@@ -28,7 +29,7 @@
 using namespace device;
 using namespace time_literals;
 
-#define VL53L8_DISTRO_MAX_SENSOR_COUNT	6
+#define VL53L8_DISTRO_MAX_SENSOR_COUNT	10
 
 class VL53L8_Distro : public px4::ScheduledWorkItem
 {
@@ -37,6 +38,7 @@ private:
 enum PacketType : uint8_t {
 	CMD_Short = 0,
 	CMD_Long,
+	MSG_VisualOdometry,
 	MSG_RangeData_16,
 	MSG_RangeData_64,
 	INVALID = 255
@@ -107,6 +109,8 @@ private:
 	template <size_t M>
 	bool parse_and_fill(VL_Range_Data_s<M> *data, distance_sensor_matrix_s &msg);
 
+	bool parse_and_fill_visual_odometry(Visual_Odometry_Data_s *data);
+
 	char 	_port[20]{};
 	Serial	_uart{};
 	speed_t _port_baudrate{1000000};
@@ -131,6 +135,7 @@ private:
 	uint8_t _sensors_out_target_order{UART_PROT_TARGET_ORDER_STRONGEST}; // Default target order for VL53L8
 	uint8_t _sensors_in_target_order{UART_PROT_TARGET_ORDER_STRONGEST}; // Default target order for VL53L8
 	uint8_t _sensors_count{0};
+	uint16_t _sensors_active_mask{0};
 	uint32_t _sensors_device_id[VL53L8_DISTRO_MAX_SENSOR_COUNT]{};
 	uint8_t _buffer[UART_PROT_MSG_MAX_SIZE * 2];
 	const uint16_t _buffer_size{sizeof(_buffer)};
@@ -167,6 +172,8 @@ private:
 		, ORB_ID(distance_sensor_matrix)
 #endif
 	};
+
+	uORB::Publication<optical_navigation_horizontal_s> _optical_navigation_pub{ORB_ID(optical_navigation_horizontal)};
 
 	perf_counter_t _comms_errors{perf_alloc(PC_COUNT, MODULE_NAME": com_err")};
 	perf_counter_t _sample_perf{perf_alloc(PC_ELAPSED, MODULE_NAME": read")};

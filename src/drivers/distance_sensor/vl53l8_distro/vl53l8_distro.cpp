@@ -274,6 +274,39 @@ bool VL53L8_Distro::parse_and_fill(VL_Range_Data_s<M> *data, distance_sensor_mat
 	return true;
 }
 
+bool VL53L8_Distro::parse_and_fill_visual_odometry(Visual_Odometry_Data_s *data) {
+    if (data->crc != data->calculate_crc(false)) {
+        PX4_ERR("CRC mismatch: received: %04X, expected: %04X", data->crc, data->calculate_crc(false));
+        perf_count(_comms_errors);
+        return false;
+    }
+
+    optical_navigation_horizontal_s msg = {};
+    msg.timestamp = data->timestamp;
+    msg.x_m                 = data->x_m;
+    msg.y_m                 = data->y_m;
+    msg.vx_m_s              = data->vx_mps;
+    msg.vy_m_s              = data->vy_mps;
+    msg.roll_rad            = data->roll_rad;
+    msg.pitch_rad           = data->pitch_rad;
+    msg.var_x_m2            = data->var_x_m2;
+    msg.var_y_m2            = data->var_y_m2;
+    msg.var_vx_m2s2         = data->var_vx_m2s2;
+    msg.var_vy_m2s2         = data->var_vy_m2s2;
+    msg.var_roll_rad2       = data->var_roll_rad2;
+    msg.var_pitch_rad2      = data->var_pitch_rad2;
+    msg.rho_m               = data->rho_m;
+    msg.calculation_time_ms = data->calculation_time_ms;
+    msg.inliers_total       = data->inliers_total;
+    msg.n1                  = data->n1;
+    msg.n2                  = data->n2;
+    msg.ok                  = data->ok;
+    msg.ok_prior            = data->ok_prior;
+    _optical_navigation_pub.publish(msg);
+
+    return true;
+}
+
 void VL53L8_Distro::Run()
 {
     perf_begin(_sample_perf);
@@ -813,6 +846,7 @@ int VL53L8_Distro::read_packet(PacketType &packet_type, uint32_t timeout_us)
         switch (frame_len) {
             case sizeof(CMD_short_s):             packet_type = PacketType::CMD_Short;       break;
             case sizeof(CMD_long_s):              packet_type = PacketType::CMD_Long;        break;
+            case sizeof(Visual_Odometry_Data_s):  packet_type = PacketType::MSG_VisualOdometry; break;
             case sizeof(VL_Range_Data_s<VL53L8_RESOLUTION_4x4>):  packet_type = PacketType::MSG_RangeData_16; break;
             case sizeof(VL_Range_Data_s<VL53L8_RESOLUTION_8x8>):  packet_type = PacketType::MSG_RangeData_64; break;
             // jeśli dodałeś odometrię:
@@ -834,15 +868,16 @@ int VL53L8_Distro::collect_streaming(uint32_t timeout_us)
     perf_begin(_sample_perf);
 
     const hrt_abstime start_time_us = hrt_absolute_time();
-    const uint16_t FULL_MASK =
-        (_sensors_count >= 16) ? 0xFFFFu : ((1u << _sensors_count) - 1u);
+    // const uint16_t FULL_MASK =
+    //     (_sensors_count >= 16) ? 0xFFFFu : ((1u << _sensors_count) - 1u);
+    bool init_mask = (_sensors_active_mask == 0);
     uint16_t received_mask = 0;
     uint8_t seq_ref = 0xFF;
 
     distance_sensor_matrix_s msg{};
     msg.timestamp = hrt_absolute_time();
 
-    while (hrt_elapsed_time(&start_time_us) < timeout_us && received_mask != FULL_MASK) {
+    while (hrt_elapsed_time(&start_time_us) < timeout_us && (init_mask || (received_mask != _sensors_active_mask))) {
         PacketType type;
         if (read_packet(type, 5_ms) != PX4_OK) {
             continue; // nic nie przyszło — jeszcze chwilę czekamy
@@ -851,6 +886,7 @@ int VL53L8_Distro::collect_streaming(uint32_t timeout_us)
         if (type == PacketType::MSG_RangeData_64) {
             auto *d = reinterpret_cast<VL_Range_Data_s<VL53L8_RESOLUTION_8x8>*>(&_buffer[0]);
             // PX4_INFO("Sensor data: timestamp: %llu, sensor_id: %d, seq: %d", d->timestamp, d->sensor_id, d->seq);
+            if (init_mask) _sensors_active_mask |= (1u << (d->sensor_id - 1));
             if (seq_ref == 0xFF) seq_ref = d->seq;
             if (d->seq != seq_ref) { received_mask = 0; seq_ref = d->seq; }
             if (parse_and_fill<VL53L8_RESOLUTION_8x8>(d, msg)) {
@@ -858,19 +894,25 @@ int VL53L8_Distro::collect_streaming(uint32_t timeout_us)
             }
         } else if (type == PacketType::MSG_RangeData_16) {
             auto *d = reinterpret_cast<VL_Range_Data_s<VL53L8_RESOLUTION_4x4>*>(&_buffer[0]);
+            if (init_mask) _sensors_active_mask |= (1u << (d->sensor_id - 1));
             if (seq_ref == 0xFF) seq_ref = d->seq;
             if (d->seq != seq_ref) { received_mask = 0; seq_ref = d->seq; }
             if (parse_and_fill<VL53L8_RESOLUTION_4x4>(d, msg)) {
                 received_mask |= (1u << (d->sensor_id - 1));
             }
+        } else if(type == PacketType::MSG_VisualOdometry) {
+            auto *odom = reinterpret_cast<Visual_Odometry_Data_s*>(&_buffer[0]);
+            // PX4_INFO("Odometry data: timestamp: %llu", odom->timestamp);
+            parse_and_fill_visual_odometry(odom);
         } else {
             // CMD_Short / CMD_Long — ACK, timesync itp. — ignorujemy tu
+            // PX4_INFO("Ignoring packet of type %d", static_cast<int>(type));
         }
     }
-    if(received_mask != FULL_MASK) {
-        // PX4_WARN("Collected data from %u sensors (mask 0b" BYTE_TO_BINARY_PATTERN ")", __builtin_popcount(received_mask), BYTE_TO_BINARY(received_mask));
+    if(received_mask != _sensors_active_mask) {
+        // PX4_WARN("Collected data from %u sensors (mask 0b%c%c" BYTE_TO_BINARY_PATTERN ")", __builtin_popcount(received_mask), ((received_mask) & 0x200 ? '1' : '0'), ((received_mask) & 0x100 ? '1' : '0'), BYTE_TO_BINARY(received_mask));
     }
     perf_end(_sample_perf);
-    return (received_mask == FULL_MASK) ? PX4_OK : PX4_ERROR;
+    return (received_mask == _sensors_active_mask) ? PX4_OK : PX4_ERROR;
 }
 

@@ -104,6 +104,39 @@ struct __attribute__((__packed__)) CMD_long_s {
 	}
 };
 
+struct __attribute__((__packed__)) Visual_Odometry_Data_s {
+	uint8_t		header_1 = UART_PROT_MSG_HEADER_1;		// ->
+	uint8_t		header_2 = UART_PROT_MSG_HEADER_2;		// - > HEADER
+	uint16_t	packet_len = 70 + UART_PROT_MSG_CRC_LEN;	// ->			only payload, with CRC
+	uint64_t	timestamp;
+	float		x_m;	// distance to center line from center of the drone [m] (FRD)
+	float		y_m;
+	float		vx_mps;	// velocity from the center line (FRD) in m/s
+	float		vy_mps;	// velocity from the center line (FRD) in m/s
+	float		roll_rad;	// roll angle in radians
+	float		pitch_rad;	// pitch angle in radians
+	float		var_x_m2;
+	float		var_y_m2;
+	float		var_vx_m2s2;
+	float		var_vy_m2s2;
+	float		var_roll_rad2;
+	float		var_pitch_rad2;
+	float		rho_m;
+	uint16_t	calculation_time_ms;
+	uint16_t	inliers_total;	// liczba inlierów użytych do globalnej PCA
+	uint16_t	n1;				// liczba punktów z sensora 1 po filtrze Z->XYZ
+	uint16_t	n2;				// to samo dla sensora 2
+	uint8_t		ok;				// 1 jeśli wynik sensowny (N>=2)
+	uint8_t		ok_prior;		// 1 jeśli rho w [prior.rho0±prior.halfspan]
+	uint16_t	crc;
+
+	uint16_t calculate_crc(bool overwrite = false) {
+		uint16_t tmp = ::calculate_crc((uint8_t *)&packet_len, packet_len - UART_PROT_MSG_CRC_LEN);
+		if(overwrite) crc = tmp;
+		return tmp;
+	}
+};
+
 template <size_t M>
 struct __attribute__((__packed__)) VL_Range_Data_s {
 	uint8_t		header_1 = UART_PROT_MSG_HEADER_1;		// ->
