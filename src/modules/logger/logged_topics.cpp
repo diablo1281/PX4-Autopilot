@@ -410,9 +410,10 @@ void LoggedTopics::add_vl_distro()
 {
 	PX4_INFO("Adding VL_DISTRO to logs");
 	add_topic_multi("distance_sensor_matrix");
+	add_topic_multi("distance_sensor_single");
 	PX4_INFO("Adding PAT9136 to logs");
 	add_topic("optical_navigation_vertical");
-	PX4_INFO("Adding VL_Wire to logs");
+	PX4_INFO("Adding VO Data v2 to logs");
 	add_topic("optical_navigation_horizontal");
 }
 

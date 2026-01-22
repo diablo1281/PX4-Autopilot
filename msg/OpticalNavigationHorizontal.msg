@@ -21,3 +21,4 @@ uint16 calculation_time_us
 #uint8 ok_prior
 uint32 rejected_x
 uint32 rejected_y
+uint8 frame

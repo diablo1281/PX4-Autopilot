@@ -8,9 +8,6 @@
 
 #include <lib/drivers/device/Device.hpp>
 
-#include <matrix/matrix/Euler.hpp>
-#include <matrix/matrix/Quaternion.hpp>
-
 #include <parameters/param.h>
 
 #include "crc.h"
@@ -377,8 +374,6 @@ bool VL53L8_Distro::parse_and_fill_L4(VL_L4_Range_Data_s *data, distance_sensor_
 
     if(!_distance_sensor_L4_pub[sid].publish(msg)) {
         PX4_WARN("Failed to publish L4 data");
-    } else {
-        // PX4_INFO("Published L4 data from sensor ID %d", data->sensor_id);
     };
 
     return true;
@@ -414,7 +409,6 @@ bool VL53L8_Distro::parse_and_fill_visual_odometry(Visual_Odometry_Data2_s *data
     // msg.ok_prior            = data->ok_prior;
     msg.rejected_x          = data->rejected_x;
     msg.rejected_y          = data->rejected_y;
-    msg.frame               = data->frame;
     _optical_navigation_pub.publish(msg);
 
     return true;
@@ -422,120 +416,103 @@ bool VL53L8_Distro::parse_and_fill_visual_odometry(Visual_Odometry_Data2_s *data
 
 void VL53L8_Distro::Run()
 {
-	perf_begin(_sample_perf);
+    perf_begin(_sample_perf);
 
-	if (_task_should_exit) {
-		PX4_INFO("VL53L8_Distro task exit requested");
-		perf_cancel(_sample_perf);
-		return;
-	}
+    if(_task_should_exit) {
+        PX4_INFO("VL53L8_Distro task exit requested");
+        // TODO: Handle cleanup if necessary
+        perf_cancel(_sample_perf);
+        return;
+    }
 
-	const hrt_abstime now = hrt_absolute_time();
+    // Ensure the serial port is open.
+	if(open_serial_port() != PX4_OK) {
+        PX4_ERR("Failed to open serial port");
+        stop();
+        ScheduleDelayed(500_ms); // Retry after a short delay
+        return;
+    }
 
-	// Ensure the serial port is open.
-	if (open_serial_port() != PX4_OK) {
-		PX4_ERR("Failed to open serial port");
-		stop();
-		ScheduleDelayed(500_ms);
-		perf_end(_sample_perf);
-		return;
-	}
+    // Check if the sensor is alive and initialize it
+    if (!_is_initialized) {
+        if(initialize_sensor() != PX4_OK) {
+            PX4_ERR("Failed to initialize VL53L8_Distro sensor");
+            perf_cancel(_sample_perf);
+            stop();
+            return;
+        }
 
-	// One-time init sequence (can block briefly, before periodic TX starts)
-	if (!_is_initialized) {
+        // Get the sensors resolution
+        if(get_sensors_resolution() != PX4_OK) {
+            PX4_ERR("Failed to get sensors resolution");
+            perf_cancel(_sample_perf);
+            stop();
+            return;
+        }
 
-		if (initialize_sensor() != PX4_OK) {
-			PX4_ERR("Failed to initialize VL53L8_Distro sensor");
-			stop();
-			perf_end(_sample_perf);
-			return;
-		}
+        // Perform a single measurement
+        if(measure(UART_PROT_CMD_RNG_SINGLE) != PX4_OK) {
+            PX4_ERR("Failed to perform initial measurement");
+            perf_cancel(_sample_perf);
+            stop();
+            return;
+        }
 
-		if (get_sensors_resolution() != PX4_OK) {
-			PX4_ERR("Failed to get sensors resolution");
-			stop();
-			perf_end(_sample_perf);
-			return;
-		}
+        // if(collect(1_s) != PX4_OK) {
+        if(collect_streaming(1_s) != PX4_OK) {
+            PX4_ERR("Failed to collect initial measurement data");
+            perf_cancel(_sample_perf);
+            stop();
+            return;
+        }
 
-        // Needed for VL53L8
-		// Perform a single measurement to verify data path
-		// if (measure(UART_PROT_CMD_RNG_SINGLE) != PX4_OK) {
-		// 	PX4_ERR("Failed to perform initial measurement");
-		// 	stop();
-		// 	perf_end(_sample_perf);
-		// 	return;
-		// }
+        // Start the automatic measurement
+        if(measure(UART_PROT_CMD_RNG_START) != PX4_OK) {
+            PX4_ERR("Failed to start ranging");
+            perf_cancel(_sample_perf);
+            stop();
+            return;
+        }
 
-		// // Collect at least something (ok to wait here)
-		// collect_streaming(1_s);
+        // ScheduleDelayed(120_ms); // Schedule the next reading cycle
+        // ScheduleOnInterval(_task_interval, _task_interval); // Schedule the next reading cycle
+        ScheduleNow();
+        return;
+    }
 
-		// // Start streaming
-		// if (measure(UART_PROT_CMD_RNG_START) != PX4_OK) {
-		// 	PX4_ERR("Failed to start ranging");
-		// 	stop();
-		// 	perf_end(_sample_perf);
-		// 	return;
-		// }
+    if(hrt_elapsed_time(&_last_sync_time) > 10_s) {
+        send_timesync();
+    }
 
-		// Initialize periodic deadlines
-		_next_attitude = now + ATT_PERIOD_US;
-		_next_timesync = now + TS_PERIOD_US;
+    // if(collect(500_ms) != PX4_OK) {
+    if(collect_streaming(2_s) != PX4_OK) {
+        // PX4_WARN("Desync detected...");
+        // measure(UART_PROT_CMD_RNG_STOP, false);
+        // px4_usleep(200_ms);
+        // int bytes_read = 1;
+        // while(bytes_read > 0)
+        //     bytes_read = _uart.readAtLeast(_buffer, _buffer_size, _buffer_size, 10_ms);
+        // PX4_INFO("Restarting...");
+        // open_serial_port();
+        // send_timesync();
+        // measure(UART_PROT_CMD_RNG_START);
+        // _rx.clear();
+        send_timesync();
+        // ScheduleDelayed(20_ms); // Schedule the next reading cycle
+        // perf_end(_sample_perf);
+        // return;
+    }
 
-		ScheduleNow();
-		perf_end(_sample_perf);
-		return;
-	}
+    ScheduleNow();
 
-	// --- RX: non-blocking, time-budgeted ---
-	const hrt_abstime rx_start = now;
-
-	// pump once before parsing
-	pump_uart_to_ring(20);
-
-	PacketType type{};
-	while ((hrt_absolute_time() - rx_start) < RX_BUDGET_US) {
-		if (!try_read_packet(type)) {
-			break;
-		}
-		handle_packet(type);
-	}
-
-	// --- TX: attitude 50Hz ---
-	if ((int64_t)(now - _next_attitude) >= 0) {
-		send_attitude();
-		advance_deadline(_next_attitude, ATT_PERIOD_US, now);
-	}
-
-	// --- TX: timesync 1Hz (message unchanged) ---
-	if ((int64_t)(now - _next_timesync) >= 0) {
-		send_timesync();
-		advance_deadline(_next_timesync, TS_PERIOD_US, now);
-	}
-
-	// --- Schedule next wakeup (nearest deadline or RX tick) ---
-	hrt_abstime next = _next_attitude;
-	if (_next_timesync < next) {
-		next = _next_timesync;
-	}
-
-	const hrt_abstime rx_wakeup = now + RX_TICK_US;
-	if (rx_wakeup < next) {
-		next = rx_wakeup;
-	}
-
-	ScheduleAt(next);
-
-	perf_end(_sample_perf);
+    perf_end(_sample_perf);
 }
 
 void VL53L8_Distro::start()
 {
-	PX4_INFO("Starting VL53L8_Distro thread");
-	const hrt_abstime now = hrt_absolute_time();
-	_next_attitude = now + ATT_PERIOD_US;
-	_next_timesync = now + TS_PERIOD_US;
-	ScheduleNow();
+    PX4_INFO("Starting VL53L8_Distro thread");
+    // ScheduleNow();
+    ScheduleDelayed(1_s);
 }
 
 void VL53L8_Distro::stop()
@@ -667,15 +644,11 @@ int VL53L8_Distro::initialize_sensor() {
         int ret = _uart.write((const void *)&msg_multi, sizeof(msg_multi));
         if (ret <= 0) { PX4_ERR("write failed: %d (%s)", errno, strerror(errno)); perf_count(_comms_errors); return PX4_ERROR; }
 
-        px4_udelay(50);
-
         msg_multi.cmd = UART_PROT_CMD_L4_Y_CALIB_OFFSET;
         msg_multi.value_i = _sensor_L4_Y_calib_offset_mm;
         msg_multi.calculate_crc(true);
         ret = _uart.write((const void *)&msg_multi, sizeof(msg_multi));
         if (ret <= 0) { PX4_ERR("write failed: %d (%s)", errno, strerror(errno)); perf_count(_comms_errors); return PX4_ERROR; }
-
-        px4_udelay(50);
 
         msg_multi.cmd = UART_PROT_CMD_L4_RNG_TIME_BUDGET;
         msg_multi.value_u = _sensor_L4_Y_range_budget_ms;
@@ -683,15 +656,11 @@ int VL53L8_Distro::initialize_sensor() {
         ret = _uart.write((const void *)&msg_multi, sizeof(msg_multi));
         if (ret <= 0) { PX4_ERR("write failed: %d (%s)", errno, strerror(errno)); perf_count(_comms_errors); return PX4_ERROR; }
 
-        px4_udelay(50);
-
         msg_multi.cmd = UART_PROT_CMD_TKF_OUTPUT_RATE;
         msg_multi.value_u = _tkf_output_rate_ms;
         msg_multi.calculate_crc(true);
         ret = _uart.write((const void *)&msg_multi, sizeof(msg_multi));
         if (ret <= 0) { PX4_ERR("write failed: %d (%s)", errno, strerror(errno)); perf_count(_comms_errors); return PX4_ERROR; }
-
-        px4_udelay(50);
 
         msg_multi.cmd = UART_PROT_CMD_TKF_X_CENTER_OFFSET;
         msg_multi.value_u = _tkf_X_center_offset_mm;
@@ -699,15 +668,11 @@ int VL53L8_Distro::initialize_sensor() {
         ret = _uart.write((const void *)&msg_multi, sizeof(msg_multi));
         if (ret <= 0) { PX4_ERR("write failed: %d (%s)", errno, strerror(errno)); perf_count(_comms_errors); return PX4_ERROR; }
 
-        px4_udelay(50);
-
         msg_multi.cmd = UART_PROT_CMD_TKF_Y_CENTER_OFFSET;
         msg_multi.value_u = _tkf_Y_center_offset_mm;
         msg_multi.calculate_crc(true);
         ret = _uart.write((const void *)&msg_multi, sizeof(msg_multi));
         if (ret <= 0) { PX4_ERR("write failed: %d (%s)", errno, strerror(errno)); perf_count(_comms_errors); return PX4_ERROR; }
-
-        px4_udelay(50);
 
         msg_multi.cmd = UART_PROT_CMD_TKF_COG_LEVER_OFFSET;
         msg_multi.value_f = _tkf_CoG_lever_height_m;
@@ -715,15 +680,11 @@ int VL53L8_Distro::initialize_sensor() {
         ret = _uart.write((const void *)&msg_multi, sizeof(msg_multi));
         if (ret <= 0) { PX4_ERR("write failed: %d (%s)", errno, strerror(errno)); perf_count(_comms_errors); return PX4_ERROR; }
 
-        px4_udelay(50);
-
         msg_multi.cmd = UART_PROT_CMD_TKF_PROCESS_NOISE_Q;
         msg_multi.value_f = _tkf_process_noise_Q;
         msg_multi.calculate_crc(true);
         ret = _uart.write((const void *)&msg_multi, sizeof(msg_multi));
         if (ret <= 0) { PX4_ERR("write failed: %d (%s)", errno, strerror(errno)); perf_count(_comms_errors); return PX4_ERROR; }
-
-        px4_udelay(50);
 
         msg_multi.cmd = UART_PROT_CMD_TKF_MIN_SIGMA;
         msg_multi.value_f = _tkf_min_sigma_R;
@@ -731,15 +692,11 @@ int VL53L8_Distro::initialize_sensor() {
         ret = _uart.write((const void *)&msg_multi, sizeof(msg_multi));
         if (ret <= 0) { PX4_ERR("write failed: %d (%s)", errno, strerror(errno)); perf_count(_comms_errors); return PX4_ERROR; }
 
-        px4_udelay(50);
-
         msg_multi.cmd = UART_PROT_CMD_TKF_USE_NIS_GATE;
         msg_multi.value_u = _tkf_use_NIS_GATE;
         msg_multi.calculate_crc(true);
         ret = _uart.write((const void *)&msg_multi, sizeof(msg_multi));
         if (ret <= 0) { PX4_ERR("write failed: %d (%s)", errno, strerror(errno)); perf_count(_comms_errors); return PX4_ERROR; }
-
-        px4_udelay(50);
 
         msg_multi.cmd = UART_PROT_CMD_TKF_NIS_GATE_THRESHOLD;
         msg_multi.value_f = _tkf_NIS_GATE_treshold;
@@ -747,15 +704,11 @@ int VL53L8_Distro::initialize_sensor() {
         ret = _uart.write((const void *)&msg_multi, sizeof(msg_multi));
         if (ret <= 0) { PX4_ERR("write failed: %d (%s)", errno, strerror(errno)); perf_count(_comms_errors); return PX4_ERROR; }
 
-        px4_udelay(50);
-
         msg_multi.cmd = UART_PROT_CMD_TKF_USE_SIGNAL_DEGRADE;
         msg_multi.value_u = _tkf_use_signal_degrade;
         msg_multi.calculate_crc(true);
         ret = _uart.write((const void *)&msg_multi, sizeof(msg_multi));
         if (ret <= 0) { PX4_ERR("write failed: %d (%s)", errno, strerror(errno)); perf_count(_comms_errors); return PX4_ERROR; }
-
-        px4_udelay(50);
 
         msg_multi.cmd = UART_PROT_CMD_TKF_SIGNAL_DEGRADE_FACTOR;
         msg_multi.value_f = _tkf_signal_degrade_factor;
@@ -763,9 +716,6 @@ int VL53L8_Distro::initialize_sensor() {
         ret = _uart.write((const void *)&msg_multi, sizeof(msg_multi));
         if (ret <= 0) { PX4_ERR("write failed: %d (%s)", errno, strerror(errno)); perf_count(_comms_errors); return PX4_ERROR; }
 
-        px4_udelay(50);
-
-        PX4_INFO("TKF parameters for L4 sensor(s) set successfully");
 #endif
 
 
@@ -1055,224 +1005,167 @@ size_t VL53L8_Distro::pump_uart_to_ring(uint32_t slice_timeout_us)
     return 0;
 }
 
-
-bool VL53L8_Distro::try_read_packet(PacketType &packet_type)
-{
-	// Non-blocking: assume _rx already contains whatever is available
-	auto crc_over_ring = [&](size_t start_off, size_t nbytes) -> uint16_t {
-		uint16_t crc = 0xFFFF;
-		uint8_t chunk[64];
-		size_t done = 0;
-		while (done < nbytes) {
-			size_t take = (nbytes - done > sizeof(chunk)) ? sizeof(chunk) : (nbytes - done);
-			size_t got = _rx.peek(start_off + done, chunk, take);
-			for (size_t i = 0; i < got; ++i) {
-				uint8_t tbl_idx = (uint8_t)((crc >> 8) ^ chunk[i]);
-				crc = (uint16_t)((crc << 8) ^ CRC16_CCITT_TABLE[tbl_idx]);
-			}
-			done += got;
-		}
-		return crc;
-	};
-
-	// 1) find header 0xD3 0xAC
-	if (_rx.size() < UART_PROT_MSG_HEADER_LEN) {
-		return false;
-	}
-
-	size_t offset = 0;
-	if (!_rx.find2(UART_PROT_MSG_HEADER_1, UART_PROT_MSG_HEADER_2, offset)) {
-		// keep 1 byte, drop the rest to avoid unbounded growth
-		if (_rx.size() > 1) {
-			_rx.drop(_rx.size() - 1);
-		}
-		return false;
-	}
-
-	if (offset) {
-		_rx.drop(offset);
-	}
-
-	if (_rx.size() < UART_PROT_MSG_HEADER_LEN) {
-		return false;
-	}
-
-	// 2) read packet_len
-	uint16_t packet_len_le = 0;
-	_rx.peek(2, reinterpret_cast<uint8_t *>(&packet_len_le), 2);
-	const uint16_t packet_len = packet_len_le;
-
-	if (packet_len < UART_PROT_PAYLOAD_MIN_SIZE || packet_len > UART_PROT_PAYLOAD_MAX_SIZE) {
-		_rx.drop(1);
-		return true; // consumed a byte, allow caller to continue
-	}
-
-	const uint16_t frame_len = UART_PROT_MSG_HEADER_LEN + packet_len;
-	if (_rx.size() < frame_len) {
-		return false; // not enough yet
-	}
-
-	// 3) CRC check over [packet_len..payload] excluding CRC
-	const size_t crc_region_off = 2;
-	const size_t crc_region_len = packet_len - UART_PROT_MSG_CRC_LEN;
-
-	uint16_t received_crc_le = 0;
-	_rx.peek(UART_PROT_MSG_HEADER_LEN + packet_len - UART_PROT_MSG_CRC_LEN,
-		 reinterpret_cast<uint8_t *>(&received_crc_le), 2);
-
-	const uint16_t expected_crc = crc_over_ring(crc_region_off, crc_region_len);
-
-	if (received_crc_le != expected_crc) {
-		perf_count(_comms_errors);
-		_rx.drop(1);
-		return true;
-	}
-
-	// 4) success: copy full frame out and drop from ring
-	_rx.read(_buffer, frame_len);
-
-	switch (frame_len) {
-	case sizeof(CMD_short_s):
-		packet_type = PacketType::CMD_Short;
-		break;
-	case sizeof(CMD_multi_s):
-		packet_type = PacketType::CMD_Multi;
-		break;
-	case sizeof(CMD_long_s):
-		packet_type = PacketType::CMD_Long;
-		break;
-	case sizeof(Visual_Odometry_Data2_s):
-		packet_type = PacketType::MSG_VisualOdometry2;
-		break;
-	case sizeof(VL_Range_Data_s<VL53L8_RESOLUTION_4x4>):
-		packet_type = PacketType::MSG_RangeData_16;
-		break;
-	case sizeof(VL_Range_Data_s<VL53L8_RESOLUTION_8x8>):
-		packet_type = PacketType::MSG_RangeData_64;
-		break;
-	case sizeof(VL_L4_Range_Data_s):
-		packet_type = PacketType::MSG_RangeData_L4;
-		break;
-	default:
-		packet_type = PacketType::INVALID;
-		PX4_ERR("Invalid packet size: %u", frame_len);
-		return true;
-	}
-
-	return true;
-}
-
-void VL53L8_Distro::handle_packet(PacketType type)
-{
-    // PX4_INFO("Handling packet of type: %d", static_cast<int>(type));
-	switch (type) {
-	case PacketType::MSG_RangeData_64: {
-		auto *d = reinterpret_cast<VL_Range_Data_s<VL53L8_RESOLUTION_8x8> *>(&_buffer[0]);
-		_sensors_active_mask |= (1u << (d->sensor_id - 1));
-		distance_sensor_matrix_s msg{};
-		msg.timestamp = hrt_absolute_time();
-		parse_and_fill<VL53L8_RESOLUTION_8x8>(d, msg);
-        // PX4_INFO("Received 64-point range data from sensor ID %d", d->sensor_id);
-	} break;
-
-	case PacketType::MSG_RangeData_16: {
-		auto *d = reinterpret_cast<VL_Range_Data_s<VL53L8_RESOLUTION_4x4> *>(&_buffer[0]);
-		_sensors_active_mask |= (1u << (d->sensor_id - 1));
-		distance_sensor_matrix_s msg{};
-		msg.timestamp = hrt_absolute_time();
-		parse_and_fill<VL53L8_RESOLUTION_4x4>(d, msg);
-        // PX4_INFO("Received 16-point range data from sensor ID %d", d->sensor_id);
-	} break;
-
-	case PacketType::MSG_RangeData_L4: {
-		auto *d = reinterpret_cast<VL_L4_Range_Data_s *>(&_buffer[0]);
-		_sensors_active_mask |= (1u << (d->sensor_id - 1));
-		distance_sensor_single_s msg{};
-		msg.timestamp = hrt_absolute_time();
-		parse_and_fill_L4(d, msg);
-        // PX4_INFO("Received L4 range data from sensor ID %d", d->sensor_id);
-	} break;
-
-	case PacketType::MSG_VisualOdometry2: {
-		auto *odom = reinterpret_cast<Visual_Odometry_Data2_s *>(&_buffer[0]);
-		parse_and_fill_visual_odometry(odom);
-        // PX4_INFO("Received visual odometry data");
-	} break;
-
-	default:
-		// CMD_* / INVALID ignored here; command path handles ACKs separately
-		break;
-	}
-}
-
-int VL53L8_Distro::send_attitude()
-{
-	vehicle_attitude_s att{};
-	if (_att_sub.update(&att)) {
-		_att_last = att;
-		_att_have_last = true;
-	}
-
-	if (!_att_have_last) {
-		return PX4_ERROR;
-	}
-
-	const matrix::Quatf q(_att_last.q);
-	const matrix::Eulerf e(q);
-
-	Vehicle_Attitude_s pkt{};
-	pkt.timestamp = hrt_absolute_time();
-	pkt.timestamp_sample = _att_last.timestamp_sample;
-	pkt.roll_rad = e.phi();
-	pkt.pitch_rad = e.theta();
-	pkt.yaw_rad = e.psi();
-	pkt.calculate_crc(true);
-
-	return _uart.write((const void *)&pkt, sizeof(Vehicle_Attitude_s));
-}
-
 int VL53L8_Distro::read_packet(PacketType &packet_type, uint32_t timeout_us)
 {
-	const hrt_abstime start_time_us = hrt_absolute_time();
+    const hrt_abstime start_time_us = hrt_absolute_time();
 
-	while (hrt_elapsed_time(&start_time_us) < timeout_us) {
+    auto crc_over_ring = [&](size_t start_off, size_t nbytes) -> uint16_t {
+        // Liczymy CRC nad n bajtami zaczynając od offsetu start_off w ringu,
+        // w porcjach (żeby nie alokować tymczasowych buforów dużych rozmiarów).
+        uint16_t crc = 0xFFFF;
+        uint8_t chunk[64];
+        size_t done = 0;
+        while (done < nbytes) {
+            size_t take = (nbytes - done > sizeof(chunk)) ? sizeof(chunk) : (nbytes - done);
+            size_t got = _rx.peek(start_off + done, chunk, take);
+            for (size_t i = 0; i < got; ++i) {
+                uint8_t tbl_idx = (uint8_t)((crc >> 8) ^ chunk[i]);
+		        crc = (uint16_t)((crc << 8) ^ CRC16_CCITT_TABLE[tbl_idx]);
+            }
+            done += got;
+        }
+        return crc;
+    };
 
-		// pump a small slice (may block up to slice_timeout_us)
-		pump_uart_to_ring(1_ms);
+    while (hrt_elapsed_time(&start_time_us) < timeout_us) {
+        // 1) dolej bajty z UART do ringu
+        pump_uart_to_ring(1_ms);
 
-		if (try_read_packet(packet_type)) {
-			// if it produced a valid packet type we accept it; INVALID means "keep scanning"
-			if (packet_type != PacketType::INVALID) {
-				return PX4_OK;
-			}
-		}
-	}
+        // 2) szukamy nagłówka 0xD3 0xAC
+        if (_rx.size() < UART_PROT_MSG_HEADER_LEN) continue;
 
-	return PX4_ERROR;
+        // wyrównanie do nagłówka
+        size_t offset = 0;
+        if (!_rx.find2(UART_PROT_MSG_HEADER_1, UART_PROT_MSG_HEADER_2, offset)) {
+            // brak nagłówka — zostaw 1 bajt na przyszłość, resztę zrzuć
+            if (_rx.size() > 1) _rx.drop(_rx.size() - 1);
+            continue;
+        }
+        if (offset) _rx.drop(offset); // dosuń header do początku
+
+        // 3) mamy header; odczytaj długość pakietu (pole packet_len za headerem)
+        if (_rx.size() < UART_PROT_MSG_HEADER_LEN) continue;
+        uint16_t packet_len_le = 0;
+        _rx.peek(2, reinterpret_cast<uint8_t*>(&packet_len_le), 2);
+        const uint16_t packet_len = packet_len_le;
+
+        // sanity check długości (payload + CRC)
+        if (packet_len < UART_PROT_PAYLOAD_MIN_SIZE || packet_len > UART_PROT_PAYLOAD_MAX_SIZE) {
+            _rx.drop(1); // zły length — przesuń o 1 i próbuj dalej
+            continue;
+        }
+
+        const uint16_t frame_len = UART_PROT_MSG_HEADER_LEN + packet_len; // pełna ramka
+        if (_rx.size() < frame_len) {
+            // czekamy aż dopłyną brakujące bajty
+            continue;
+        }
+
+        // 4) CRC: liczymy po polu packet_len..(przed CRC) = (packet_len - CRC_LEN) bajtów
+        // Start offset = 2 (bo omijamy header_1, header_2)
+        const size_t crc_region_off = 2;
+        const size_t crc_region_len = packet_len - UART_PROT_MSG_CRC_LEN;
+
+        // pobierz CRC z końca ramki (2 bajty LE)
+        uint16_t received_crc_le = 0;
+        _rx.peek(UART_PROT_MSG_HEADER_LEN + packet_len - UART_PROT_MSG_CRC_LEN,
+                 reinterpret_cast<uint8_t*>(&received_crc_le), 2);
+        const uint16_t received_crc = received_crc_le;
+
+        // policz oczekiwane CRC bez kopiowania
+        const uint16_t expected_crc = crc_over_ring(crc_region_off, crc_region_len);
+
+        if (received_crc != expected_crc) {
+            perf_count(_comms_errors);
+            _rx.drop(1);        // zły CRC — przesuń o 1 bajt i kontynuuj skan
+            continue;
+        }
+
+        // 5) Sukces: przenieś całą ramkę do _buffer (jednorazowo), zjedz ją z ringu
+        _rx.read(_buffer, frame_len);
+
+        // 6) Rozpoznaj typ po całkowitym rozmiarze ramki (jak wcześniej)
+        switch (frame_len) {
+            case sizeof(CMD_short_s):             packet_type = PacketType::CMD_Short;       break;
+            case sizeof(CMD_multi_s):             packet_type = PacketType::CMD_Multi;       break;
+            case sizeof(CMD_long_s):              packet_type = PacketType::CMD_Long;        break;
+            case sizeof(Visual_Odometry_Data2_s):  packet_type = PacketType::MSG_VisualOdometry2; break;
+            case sizeof(VL_Range_Data_s<VL53L8_RESOLUTION_4x4>):  packet_type = PacketType::MSG_RangeData_16; break;
+            case sizeof(VL_Range_Data_s<VL53L8_RESOLUTION_8x8>):  packet_type = PacketType::MSG_RangeData_64; break;
+            case sizeof(VL_L4_Range_Data_s):  packet_type = PacketType::MSG_RangeData_L4; break;
+            // jeśli dodałeś odometrię:
+            // case sizeof(ODOM_Packet_s):           packet_type = PacketType::MSG_Odometry;    break;
+            default:
+                packet_type = PacketType::INVALID;
+                PX4_ERR("Invalid packet size: %u", frame_len);
+                continue;
+        }
+
+        return PX4_OK;
+    }
+
+    return PX4_ERROR; // timeout
 }
 
 int VL53L8_Distro::collect_streaming(uint32_t timeout_us)
 {
-	// Legacy helper: allows waiting for at least one valid packet (used during init).
-	const hrt_abstime start_time_us = hrt_absolute_time();
+    perf_begin(_sample_perf);
 
-	PacketType type{};
-	bool got_any = false;
+    const hrt_abstime start_time_us = hrt_absolute_time();
+    // const uint16_t FULL_MASK =
+    //     (_sensors_count >= 16) ? 0xFFFFu : ((1u << _sensors_count) - 1u);
+    bool init_mask = (_sensors_active_mask == 0);
+    uint16_t received_mask = 0;
+    uint8_t seq_ref = 0xFF;
 
-	while (hrt_elapsed_time(&start_time_us) < timeout_us) {
+    distance_sensor_matrix_s msg{};
+    distance_sensor_single_s msg_L4{};
 
-		// pump and then use the timeout-enabled reader (short slice)
-		if (read_packet(type, 5_ms) != PX4_OK) {
-			continue;
-		}
+    while (hrt_elapsed_time(&start_time_us) < timeout_us && (init_mask || (received_mask != _sensors_active_mask))) {
+        PacketType type;
+        if (read_packet(type, 5_ms) != PX4_OK) {
+            continue; // nic nie przyszło — jeszcze chwilę czekamy
+        }
 
-		handle_packet(type);
-		got_any = true;
-
-		// During init we don't need a full sensor set, just proof that the link works.
-		break;
-	}
-
-	return got_any ? PX4_OK : PX4_ERROR;
+        if (type == PacketType::MSG_RangeData_64) {
+            auto *d = reinterpret_cast<VL_Range_Data_s<VL53L8_RESOLUTION_8x8>*>(&_buffer[0]);
+            // PX4_INFO("Sensor data: timestamp: %llu, sensor_id: %d, seq: %d", d->timestamp, d->sensor_id, d->seq);
+            if (init_mask) _sensors_active_mask |= (1u << (d->sensor_id - 1));
+            if (seq_ref == 0xFF) seq_ref = d->seq;
+            if (d->seq != seq_ref) { received_mask = 0; seq_ref = d->seq; }
+            msg.timestamp = hrt_absolute_time();
+            if (parse_and_fill<VL53L8_RESOLUTION_8x8>(d, msg)) {
+                received_mask |= (1u << (d->sensor_id - 1));
+            }
+        } else if (type == PacketType::MSG_RangeData_16) {
+            auto *d = reinterpret_cast<VL_Range_Data_s<VL53L8_RESOLUTION_4x4>*>(&_buffer[0]);
+            if (init_mask) _sensors_active_mask |= (1u << (d->sensor_id - 1));
+            if (seq_ref == 0xFF) seq_ref = d->seq;
+            if (d->seq != seq_ref) { received_mask = 0; seq_ref = d->seq; }
+            msg.timestamp = hrt_absolute_time();
+            if (parse_and_fill<VL53L8_RESOLUTION_4x4>(d, msg)) {
+                received_mask |= (1u << (d->sensor_id - 1));
+            }
+        } else if(type == PacketType::MSG_VisualOdometry) {
+            auto *odom = reinterpret_cast<Visual_Odometry_Data2_s*>(&_buffer[0]);
+            // PX4_INFO("Odometry data: timestamp: %llu", odom->timestamp);
+            parse_and_fill_visual_odometry(odom);
+        } else if(type == PacketType::MSG_RangeData_L4) {
+            auto *d = reinterpret_cast<VL_L4_Range_Data_s*>(&_buffer[0]);
+            msg_L4.timestamp = hrt_absolute_time();
+            if (parse_and_fill_L4(d, msg_L4)) {
+                // PX4_INFO("L4 Sensor data: timestamp: %llu, sensor_id: %d, distance_mm: %d", d->timestamp, d->sensor_id, d->distance_mm);
+                received_mask |= (1u << (d->sensor_id - 1));
+            }
+        }else {
+            // CMD_Short / CMD_Long — ACK, timesync itp. — ignorujemy tu
+            // PX4_INFO("Ignoring packet of type %d", static_cast<int>(type));
+        }
+    }
+    if(received_mask != _sensors_active_mask) {
+        // PX4_WARN("Collected data from %u sensors (mask 0b%c%c" BYTE_TO_BINARY_PATTERN ")", __builtin_popcount(received_mask), ((received_mask) & 0x200 ? '1' : '0'), ((received_mask) & 0x100 ? '1' : '0'), BYTE_TO_BINARY(received_mask));
+    }
+    perf_end(_sample_perf);
+    return (received_mask == _sensors_active_mask) ? PX4_OK : PX4_ERROR;
 }
 

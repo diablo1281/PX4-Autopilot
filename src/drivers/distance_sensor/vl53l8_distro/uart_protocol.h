@@ -109,7 +109,7 @@ struct __attribute__((__packed__)) CMD_short_s {
 struct __attribute__((__packed__)) CMD_multi_s {
 	uint8_t		header_1 = UART_PROT_MSG_HEADER_1;		// ->
 	uint8_t		header_2 = UART_PROT_MSG_HEADER_2;		// - > HEADER
-	uint16_t	packet_len = 2 + UART_PROT_MSG_CRC_LEN;	// ->			only payload, with CRC
+	uint16_t	packet_len = 5 + UART_PROT_MSG_CRC_LEN;	// ->			only payload, with CRC
 	uint8_t		cmd;
 	union {
 		uint32_t	value_u;
@@ -203,7 +203,7 @@ struct __attribute__((__packed__)) Visual_Odometry_Data2_s {
 struct __attribute__((__packed__)) Vehicle_Attitude_s {
 	uint8_t		header_1 = UART_PROT_MSG_HEADER_1;		// ->
 	uint8_t		header_2 = UART_PROT_MSG_HEADER_2;		// - > HEADER
-	uint16_t	packet_len = 32 + UART_PROT_MSG_CRC_LEN;	// ->			only payload, with CRC
+	uint16_t	packet_len = 28 + UART_PROT_MSG_CRC_LEN;	// ->			only payload, with CRC
 	uint64_t	timestamp;
 	uint64_t	timestamp_sample;
 	float		roll_rad;
@@ -235,7 +235,7 @@ struct __attribute__((__packed__)) VL_L4_Range_Data_s {
 	uint8_t		range_status;			/* Status of measurements. If the status is equal to 0, the data are valid*/
 	uint16_t	crc;
 
-	int16_t calculate_crc(bool overwrite = false) {
+	uint16_t calculate_crc(bool overwrite = false) {
 		uint16_t tmp = ::calculate_crc((uint8_t *)&packet_len, packet_len - UART_PROT_MSG_CRC_LEN);
 		if(overwrite) crc = tmp;
 		return tmp;

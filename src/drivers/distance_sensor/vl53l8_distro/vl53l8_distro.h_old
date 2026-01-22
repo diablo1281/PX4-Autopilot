@@ -17,11 +17,9 @@
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 
 #include <uORB/PublicationMulti.hpp>
-#include <uORB/Subscription.hpp>
 #include <uORB/topics/distance_sensor_single.h>
 #include <uORB/topics/distance_sensor_matrix.h>
 #include <uORB/topics/optical_navigation_horizontal.h>
-#include <uORB/topics/vehicle_attitude.h>
 
 #include <px4_platform_common/Serial.hpp>
 
@@ -45,6 +43,7 @@ enum PacketType : uint8_t {
 	CMD_Short = 0,
 	CMD_Multi,
 	CMD_Long,
+	MSG_VisualOdometry,
 	MSG_VisualOdometry2,
 	MSG_RangeData_16,
 	MSG_RangeData_64,
@@ -108,13 +107,6 @@ private:
 	// Pompuje UART -> ring buffer małymi porcjami
 	size_t pump_uart_to_ring(uint32_t slice_timeout_us = 1000);
 
-	// Próba zdekodowania jednej ramki z ring buffera (bez czekania)
-	bool try_read_packet(PacketType &packet_type);
-	void handle_packet(PacketType type);
-
-	// TX: attitude @ 50Hz
-	int send_attitude();
-
 	int send_command(uint8_t cmd, uint8_t &value, bool ack = false, uint32_t timeout_us = 100_ms);
 	int send_command(uint8_t cmd, uint32_t &value, bool ack = false, uint32_t timeout_us = 100_ms);
 
@@ -141,25 +133,6 @@ private:
 	bool _task_should_exit{false};
 
 	uint32_t _task_interval{100_ms};
-
-	// --- TX scheduling (attitude 50Hz, timesync 1Hz) ---
-	static constexpr hrt_abstime ATT_PERIOD_US = 20_ms;
-	static constexpr hrt_abstime TS_PERIOD_US  = 1_s;
-	static constexpr hrt_abstime RX_TICK_US    = 2_ms;
-	static constexpr hrt_abstime RX_BUDGET_US  = 1500; // max RX+parse per Run()
-
-	hrt_abstime _next_attitude{0};
-	hrt_abstime _next_timesync{0};
-
-	static inline void advance_deadline(hrt_abstime &t, hrt_abstime period, hrt_abstime now)
-	{
-		t += period;
-		if ((int64_t)(now - t) >= 0) {
-			const hrt_abstime n = (now - t) / period + 1;
-			t += n * period;
-		}
-	}
-
 
 	bool _is_initialized{false};
 
@@ -196,11 +169,6 @@ private:
 	const uint16_t _buffer_size{sizeof(_buffer)};
 
 	hrt_abstime _last_sync_time{};
-
-	// uORB input for attitude -> UART
-	uORB::Subscription _att_sub{ORB_ID(vehicle_attitude)};
-	vehicle_attitude_s _att_last{};
-	bool _att_have_last{false};
 
 	uORB::PublicationMulti<distance_sensor_matrix_s> _distance_sensor_pub[VL53L8_DISTRO_MAX_SENSOR_COUNT] {
 		ORB_ID(distance_sensor_matrix)
