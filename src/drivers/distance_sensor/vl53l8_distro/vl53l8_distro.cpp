@@ -491,7 +491,7 @@ void VL53L8_Distro::Run()
 	const hrt_abstime rx_start = now;
 
 	// pump once before parsing
-	pump_uart_to_ring(20);
+	pump_uart_to_ring(100);
 
 	PacketType type{};
 	while ((hrt_absolute_time() - rx_start) < RX_BUDGET_US) {

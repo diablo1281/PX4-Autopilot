@@ -24,6 +24,8 @@
 #include <uORB/Publication.hpp>
 // #include <uORB/PublicationMulti.hpp>
 #include <px4_platform_common/i2c_spi_buses.h>
+#include <lib/matrix/matrix/Vector2.hpp>
+#include <lib/matrix/matrix/Matrix.hpp>
 
 using namespace time_literals;
 
@@ -112,6 +114,34 @@ private:
 
 	bool publish() { auto out = this->_optical_nav; return this->_pub.publish(out); }
 
+	// KF
+	void kf_init();
+	void kf_set_process_noise(float sigma_a) { this->_sigma_a = sigma_a; }
+	void kf_predict(float dt);
+	bool kf_update_pos(float z, float R);
+	bool kf_update_vel(float v, float R);
+	float compute_Rz(uint8_t squal,
+                        float z_ned_m,          // absolutne z w NED
+                        float v_est_ned_mps,
+                        float sigma_z0_m,
+                        float rv_percent,       // 0.0f jeśli nie używasz RV
+                        float delay_s,          // 0.0f jeśli nie używasz delay
+                        uint8_t squal_min);
+
+	float z() const { return _x(0); }
+    float v() const { return _x(1); }
+	float var_z() const { return _P(0,0); }
+	float var_v() const { return _P(1,1); }
+
+	matrix::Vector2f			_x{};	// [z; vz]
+	matrix::Matrix<float,2,2>	_P{};	// covariance matrix
+
+	float	_sigma_a{1.5f};	// process noise acceleration stddev
+	constexpr static float MOTION_THR_PX = 5.0f; // motion threshold in pixels
+	float	_ux{0.0f};	// X axis contribution factor
+	float	_uy{0.0f};	// Y axis contribution factor
+
+
 	perf_counter_t		_sample_perf;
 	perf_counter_t		_comms_errors;
 	perf_counter_t 		_collection_errors;
@@ -121,6 +151,7 @@ private:
 	bool	_should_exit{false};
 	uint8_t	_error_counter{0};
 	hrt_abstime _last_run{0};
+	uint32_t	_device_id{0};
 
 	union {
 		struct {
@@ -149,6 +180,7 @@ private:
 		uint8_t rawdata_sum;
 		uint8_t rawdata_min;
 		uint8_t rawdata_max;
+		bool	new_data;
 	};
 #pragma pack(pop)
 
@@ -163,7 +195,8 @@ private:
 		(ParamFloat<px4::params::PAT9136_X_CPI>) _param_x_cpi,
 		(ParamFloat<px4::params::PAT9136_Y_CPI>) _param_y_cpi,
 		(ParamInt<px4::params::PAT9136_ORIENT>) _param_orient,
-		(ParamBool<px4::params::PAT9136_TEXTURE>) _param_texture
+		(ParamBool<px4::params::PAT9136_TEXTURE>) _param_texture,
+		(ParamFloat<px4::params::PAT9136_ANGLE>) _param_sensor_angle
 	)
 
 	uORB::SubscriptionInterval _parameter_update_sub{ORB_ID(parameter_update), 1_s};

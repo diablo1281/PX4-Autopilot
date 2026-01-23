@@ -6,6 +6,7 @@
  */
 
 #include "PAT9136.hpp"
+#include <lib/drivers/device/Device.hpp>
 
 PAT9136_I2C::PAT9136_I2C(const I2CSPIDriverConfig &config) :
 	I2C(config),
@@ -17,6 +18,12 @@ PAT9136_I2C::PAT9136_I2C(const I2CSPIDriverConfig &config) :
 	_measure_errors(perf_alloc(PC_COUNT, "pat9136_measurement_err"))
 {
 	_pub.advertise();
+
+	device::Device::DeviceId device_id;
+    device_id.devid_s.devtype = DRV_FLOW_DEV_TYPE_PAT9136;
+	device_id.devid_s.bus_type = device::Device::DeviceBusType::DeviceBusType_I2C;
+	device_id.devid_s.address = PAT9136_I2C_PRODUCT_ID;
+	this->_device_id = device_id.devid;
 
 	memset(&this->_optical_nav, 0, sizeof(this->_optical_nav));
 }
@@ -109,6 +116,11 @@ int PAT9136_I2C::init() {
 		ret = this->set_matte_textured_mode();
 		if(ret != PX4_OK) return ret;
 	}
+
+	this->_ux = sinf(math::radians(_param_sensor_angle.get()));
+	this->_uy = cosf(math::radians(_param_sensor_angle.get()));
+
+	this->kf_init();
 
 	_initialized = true;
 
@@ -229,12 +241,14 @@ void PAT9136_I2C::RunImpl() {
 	} else {
 		_error_counter = 0;
 		hrt_abstime now = hrt_absolute_time();
+
 		this->_optical_nav.dt_us = now - this->_optical_nav.timestamp;
-		float dt_s_inv = 1.0f / (this->_optical_nav.dt_us * 1.0e-6f);
-		this->_optical_nav.x_speed_m_s = (float)(this->_nav_data.x_sum - this->_optical_nav.x_sum) * this->_x_resolution_cpm_inv * dt_s_inv;
-		this->_optical_nav.y_speed_m_s = (float)(this->_nav_data.y_sum - this->_optical_nav.y_sum) * this->_y_resolution_cpm_inv * dt_s_inv;
+		this->_optical_nav.sensor_id = this->_device_id;
+
 		this->_optical_nav.x_sum = this->_nav_data.x_sum;
 		this->_optical_nav.y_sum = this->_nav_data.y_sum;
+		this->_optical_nav.x_delta = this->_nav_data.x_delta;
+		this->_optical_nav.y_delta = this->_nav_data.y_delta;
 		this->_optical_nav.squal = this->_nav_data.squal;
 		this->_optical_nav.squal2 = this->_nav_data.squal2;
 		this->_optical_nav.rawdata_min = this->_nav_data.rawdata_min;
@@ -243,7 +257,47 @@ void PAT9136_I2C::RunImpl() {
 		this->_optical_nav.shutter = this->_nav_data.shutter;
 		this->_optical_nav.x_resolution = this->_x_resolution_cpi;
 		this->_optical_nav.y_resolution = this->_y_resolution_cpi;
-		this->_optical_nav.sensor_id = PAT9136_I2C_PRODUCT_ID;
+		this->_optical_nav.new_data = this->_nav_data.new_data;
+
+
+		// KF
+		float dt_s = (float)(this->_optical_nav.dt_us) * 1e-6f;
+		dt_s = math::constrain(dt_s, 0.8f/_param_rate_hz.get(), 1.2f/_param_rate_hz.get()); // constrain dt to reasonable values
+		this->kf_predict(dt_s);
+
+		if(this->_nav_data.new_data) {
+			// position update
+			const float px = (float)(this->_nav_data.x_sum) * this->_x_resolution_cpm_inv;
+			const float py = (float)(this->_nav_data.y_sum) * this->_y_resolution_cpm_inv;
+
+			const float z_ned = this->_ux * px + this->_uy * py;
+
+			const float Rz = compute_Rz(this->_nav_data.squal,
+										z_ned,
+										this->v(),
+										0.005f,          // sigma_z0_m
+										0.0f,           // rv_percent
+										0.0f,           // delay_s
+										40);            // squal_min
+
+			this->kf_update_pos(z_ned, Rz);
+		} else {
+			// velocity = 0 update, as no new data available
+			const float kx = this->_ux * this->_x_resolution_cpm_inv;
+			const float ky = this->_uy * this->_y_resolution_cpm_inv;
+			const float z_thr = MOTION_THR_PX * sqrtf(kx * kx + ky * ky);
+			const float v_thr = z_thr / dt_s;
+			const float sigma_v = v_thr / 3.0f; // 3-sigma
+
+			const float Rv = sigma_v * sigma_v;
+
+			this->kf_update_vel(0.0f, Rv);
+		}
+
+		this->_optical_nav.z_m = this->z();
+		this->_optical_nav.vz_m_s = this->v();
+		this->_optical_nav.var_z_m2 = this->var_z();
+		this->_optical_nav.var_vz_m2s2 = this->var_v();
 
 		this->_optical_nav.timestamp = now;
 
@@ -255,4 +309,106 @@ void PAT9136_I2C::RunImpl() {
 		this->_should_exit = true;
 		return;
 	}
+}
+
+void PAT9136_I2C::kf_init() {
+	this->_x.zero();
+	this->_P.setIdentity();
+    this->_P(0,0) = 0.05f * 0.05f;   // np. 5 cm^2 startowo (konserwatywnie)
+    this->_P(1,1) = 0.2f  * 0.2f;    // np. (0.2 m/s)^2
+    this->_P(0,1) = 0.0f;
+    this->_P(1,0) = 0.0f;
+}
+
+void PAT9136_I2C::kf_predict(float dt) {
+	matrix::Matrix<float,2,2> F;
+	F.setIdentity();
+	F(0,1) = dt;
+
+	const float dt2 = dt * dt;
+	const float dt3 = dt2 * dt;
+	const float dt4 = dt2 * dt2;
+	const float sa2 = this->_sigma_a * this->_sigma_a;
+
+	matrix::Matrix<float,2,2> Q;
+	Q(0,0) = 0.25f * dt4 * sa2;
+	Q(0,1) = 0.5f  * dt3 * sa2;
+	Q(1,0) = 0.5f  * dt3 * sa2;
+	Q(1,1) = dt2 * sa2;
+
+	this->_x = F * this->_x;
+	this->_P = F * this->_P * F.transpose() + Q;
+}
+
+bool PAT9136_I2C::kf_update_pos(float z, float R) {
+	const float nu = z - this->_x(0);
+	const float S  = this->_P(0,0) + R;
+	if (S < 1e-9f) return false;
+
+	matrix::Vector2f K;
+	K(0) = this->_P(0,0) / S;
+	K(1) = this->_P(1,0) / S;
+
+	this->_x += K * nu;
+
+	matrix::Matrix<float,2,2> I; I.setIdentity();
+	matrix::Matrix<float,2,2> KH; KH.setZero();
+	KH(0,0) = K(0);
+	KH(1,0) = K(1);
+
+	this->_P = (I - KH) * this->_P;
+	return true;
+}
+
+bool PAT9136_I2C::kf_update_vel(float v, float R) {
+	const float nu = v - this->_x(1);
+	const float S  = this->_P(1,1) + R;
+	if (S < 1e-9f) return false;
+
+	matrix::Vector2f K;
+	K(0) = this->_P(0,1) / S;
+	K(1) = this->_P(1,1) / S;
+
+	this->_x += K * nu;
+
+	matrix::Matrix<float,2,2> I; I.setIdentity();
+	matrix::Matrix<float,2,2> KH; KH.setZero();
+	KH(0,1) = K(0);
+	KH(1,1) = K(1);
+
+	this->_P = (I - KH) * this->_P;
+	return true;
+}
+
+float PAT9136_I2C::compute_Rz(uint8_t squal,
+                        float z_ned_m,          // absolutne z w NED
+                        float v_est_ned_mps,
+                        float sigma_z0_m,
+                        float rv_percent,       // 0.0f jeśli nie używasz RV
+                        float delay_s,          // 0.0f jeśli nie używasz delay
+                        uint8_t squal_min)
+{
+    if (squal < squal_min) {
+        return 1e3f; // praktycznie pomija update
+    }
+
+    // SQUAL -> NoF
+    const float NoF = (float)squal * 4.f;
+    const float Nmin = 16.f;
+    const float Nref = 256.f;
+
+    const float sigma_noise = sigma_z0_m * sqrtf(Nref / fmaxf(NoF, Nmin));
+
+    // RV: sigma_scale = alpha * |z|
+    const float alpha = rv_percent / 200.f; // peak-to-peak % -> ~ +/-RV/2
+    const float sigma_scale = alpha * fabsf(z_ned_m);
+
+    // delay: sigma_delay = |v| * tau
+    const float sigma_delay = fabsf(v_est_ned_mps) * fmaxf(delay_s, 0.f);
+
+    const float sigma_total = sqrtf(sigma_noise*sigma_noise +
+                                    sigma_scale*sigma_scale +
+                                    sigma_delay*sigma_delay);
+
+    return sigma_total * sigma_total;
 }

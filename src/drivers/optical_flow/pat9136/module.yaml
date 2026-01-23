@@ -24,6 +24,7 @@ parameters:
             type: float
             min: 1.0
             max: 50
+            unit: Hz
             increment: 1.0
             decimal: 1
             reboot_required: true
@@ -88,3 +89,17 @@ parameters:
             num_instances: 1
             default: false
 
+        PAT9136_ANGLE:
+            description:
+                short: Angle of the PAT9136 sensor relative to the Z axis (NED frame)
+                long: |
+                    Set the angle of the PAT9136 optical flow sensor relative to the Z axis in the NED frame.
+                    This is used for combining readings from X and Y axis of the sensor.
+            type: float
+            min: 0.0
+            max: 90.0
+            unit: deg
+            decimal: 0
+            reboot_required: true
+            num_instances: 1
+            default: 0.0

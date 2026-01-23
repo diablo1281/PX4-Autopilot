@@ -146,7 +146,7 @@ private:
 	static constexpr hrt_abstime ATT_PERIOD_US = 20_ms;
 	static constexpr hrt_abstime TS_PERIOD_US  = 1_s;
 	static constexpr hrt_abstime RX_TICK_US    = 2_ms;
-	static constexpr hrt_abstime RX_BUDGET_US  = 1500; // max RX+parse per Run()
+	static constexpr hrt_abstime RX_BUDGET_US  = 1400; // max RX+parse per Run()
 
 	hrt_abstime _next_attitude{0};
 	hrt_abstime _next_timesync{0};

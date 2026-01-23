@@ -69,8 +69,8 @@ private:
 			msg.sensor_id = nav.sensor_id;
 			msg.flow_x = (int16_t)nav.x_sum;
 			msg.flow_y = (int16_t)nav.y_sum;
-			msg.flow_comp_m_x = nav.x_speed_m_s;
-			msg.flow_comp_m_y = nav.y_speed_m_s;
+			msg.flow_comp_m_x = nav.z_m;
+			msg.flow_comp_m_y = nav.vz_m_s;
 			msg.quality = nav.squal;
 
 			// if (PX4_ISFINITE(flow.distance_m)) {
@@ -80,8 +80,8 @@ private:
 				msg.ground_distance = (float)nav.shutter;
 			// }
 
-			msg.flow_rate_x = 0.0f;
-			msg.flow_rate_y = 0.0f;
+			msg.flow_rate_x = nav.var_z_m2;
+			msg.flow_rate_y = nav.var_vz_m2s2;
 
 			mavlink_msg_optical_flow_send_struct(_mavlink->get_channel(), &msg);
 
