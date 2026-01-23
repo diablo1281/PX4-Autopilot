@@ -21,7 +21,9 @@
 #include <uORB/topics/distance_sensor_single.h>
 #include <uORB/topics/distance_sensor_matrix.h>
 #include <uORB/topics/optical_navigation_horizontal.h>
+#include <uORB/topics/optical_navigation_vertical.h>
 #include <uORB/topics/vehicle_attitude.h>
+#include <uORB/topics/vehicle_odometry.h>
 
 #include <px4_platform_common/Serial.hpp>
 
@@ -168,7 +170,7 @@ private:
 #if VL53L8_DISTRO_L4_MAX_SENSOR_COUNT > 0
 	int16_t _sensor_L4_X_calib_offset_mm{-10};
 	int16_t _sensor_L4_Y_calib_offset_mm{-14};
-	uint16_t _sensor_L4_Y_range_budget_ms{20};
+	uint16_t _sensor_L4_range_budget_ms{20};
 
 	uint16_t	_tkf_output_rate_ms{100};
 	uint16_t	_tkf_X_center_offset_mm{61};
@@ -239,6 +241,10 @@ private:
 	};
 
 	uORB::Publication<optical_navigation_horizontal_s> _optical_navigation_pub{ORB_ID(optical_navigation_horizontal)};
+
+	uORB::Publication<vehicle_odometry_s> _vehicle_odometry_pub{ORB_ID(vehicle_visual_odometry)};
+
+	uORB::Subscription _optical_nav_vert_sub{ORB_ID(optical_navigation_vertical)};
 
 	perf_counter_t _comms_errors{perf_alloc(PC_COUNT, MODULE_NAME": com_err")};
 	perf_counter_t _sample_perf{perf_alloc(PC_ELAPSED, MODULE_NAME": read")};

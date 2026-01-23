@@ -58,6 +58,9 @@ VL53L8_Distro::VL53L8_Distro(const char *path, int baudrate) :
         device_id.devid_s.address = i + VL53L8_DISTRO_L4_FIRST_INDEX;
         _sensors_device_id[i + VL53L8_DISTRO_MAX_SENSOR_COUNT] = device_id.devid;
     }
+
+    _optical_navigation_pub.advertise();
+    _vehicle_odometry_pub.advertise();
 }
 
 VL53L8_Distro::~VL53L8_Distro()
@@ -71,41 +74,39 @@ VL53L8_Distro::~VL53L8_Distro()
 int VL53L8_Distro::init()
 {
     int32_t param = 0;
-    param_get(param_find("VL_D_OUT_RES"), &param);
-    if(param > 0) {
+
+    if(param_get(param_find("VL_D_OUT_RES"), &param) >= 0) {
         _sensors_out_resolution = (uint8_t) param;
     } else {
         PX4_ERR("Error reading `VL_D_OUT_RES` parameter!");
     }
-    param_get(param_find("VL_D_IN_RES"), &param);
-    if(param > 0) {
+
+    if(param_get(param_find("VL_D_IN_RES"), &param) >= 0) {
         _sensors_in_resolution = (uint8_t) param;
     } else {
         PX4_ERR("Error reading `VL_D_IN_RES` parameter!");
     }
 
-    param_get(param_find("VL_D_OUT_FREQ"), &param);
-    if(param > 0) {
+    if(param_get(param_find("VL_D_OUT_FREQ"), &param) >= 0) {
         _sensors_out_frequency = (uint8_t) param;
         _task_interval = 1_s / _sensors_out_frequency;
     } else {
         PX4_ERR("Error reading `VL_D_OUT_FREQ` parameter!");
     }
-    param_get(param_find("VL_D_IN_FREQ"), &param);
-    if(param > 0) {
+
+    if(param_get(param_find("VL_D_IN_FREQ"), &param) >= 0) {
         _sensors_in_frequency = (uint8_t) param;
     } else {
         PX4_ERR("Error reading `VL_D_IN_FREQ` parameter!");
     }
 
-    param_get(param_find("VL_D_OUT_TARGET"), &param);
-    if(param > 0) {
+    if(param_get(param_find("VL_D_OUT_TARGET"), &param) >= 0) {
         _sensors_out_target_order = (uint8_t) param;
     } else {
         PX4_ERR("Error reading `VL_D_OUT_TARGET` parameter!");
     }
-    param_get(param_find("VL_D_IN_TARGET"), &param);
-    if(param > 0) {
+
+    if(param_get(param_find("VL_D_IN_TARGET"), &param) >= 0) {
         _sensors_in_target_order = (uint8_t) param;
     } else {
         PX4_ERR("Error reading `VL_D_IN_TARGET` parameter!");
@@ -143,7 +144,7 @@ int VL53L8_Distro::init()
 #endif
 
 #if VL53L8_DISTRO_L4_MAX_SENSOR_COUNT > 0
-    param_get(param_find(" VL_D_L4_9_AXIS"), &orientation); _sensors_rotation[VL53L8_DISTRO_L4_FIRST_INDEX - 1] = (uint8_t)orientation;
+    param_get(param_find("VL_D_L4_9_AXIS"), &orientation); _sensors_rotation[VL53L8_DISTRO_L4_FIRST_INDEX - 1] = (uint8_t)orientation;
 #endif
 #if VL53L8_DISTRO_L4_MAX_SENSOR_COUNT > 1
     param_get(param_find("VL_D_L4_10_AXIS"), &orientation); _sensors_rotation[VL53L8_DISTRO_L4_FIRST_INDEX] = (uint8_t)orientation;
@@ -152,56 +153,43 @@ int VL53L8_Distro::init()
 #if VL53L8_DISTRO_L4_MAX_SENSOR_COUNT > 0
     float param_f = 0.0f;
 
-    param_get(param_find("VL_D_L4_OFF_X"), &param);
-    if(param > 0) _sensor_L4_X_calib_offset_mm = (int16_t) param;
+    if(param_get(param_find("VL_D_L4_OFF_X"), &param) >= 0) _sensor_L4_X_calib_offset_mm = (int16_t) param;
     else PX4_ERR("Error reading `VL_D_L4_OFF_X` parameter!");
 
-    param_get(param_find("VL_D_L4_OFF_Y"), &param);
-    if(param > 0) _sensor_L4_Y_calib_offset_mm = (int16_t) param;
+    if(param_get(param_find("VL_D_L4_OFF_Y"), &param) >= 0) _sensor_L4_Y_calib_offset_mm = (int16_t) param;
     else PX4_ERR("Error reading `VL_D_L4_OFF_Y` parameter!");
 
-    param_get(param_find("VL_D_L4_RNGTIME"), &param);
-    if(param > 0) _sensor_L4_Y_range_budget_ms = (uint16_t) param;
+    if(param_get(param_find("VL_D_L4_RNGTIME"), &param) >= 0) _sensor_L4_range_budget_ms = (uint16_t) param;
     else PX4_ERR("Error reading `VL_D_L4_RNGTIME` parameter!");
 
-    param_get(param_find("VL_TKF_OUT_RATE"), &param);
-    if(param > 0) _tkf_output_rate_ms = (uint16_t) param;
+    if(param_get(param_find("VL_TKF_OUT_RATE"), &param) >= 0) _tkf_output_rate_ms = (uint16_t) param;
     else PX4_ERR("Error reading `VL_TKF_OUT_RATE` parameter!");
 
-    param_get(param_find("VL_TKF_X_CTR_OFF"), &param);
-    if(param > 0) _tkf_X_center_offset_mm = (uint16_t) param;
+    if(param_get(param_find("VL_TKF_X_CTR_OFF"), &param) >= 0) _tkf_X_center_offset_mm = (uint16_t) param;
     else PX4_ERR("Error reading `VL_TKF_X_CTR_OFF` parameter!");
 
-    param_get(param_find("VL_TKF_Y_CTR_OFF"), &param);
-    if(param > 0) _tkf_Y_center_offset_mm = (uint16_t) param;
+    if(param_get(param_find("VL_TKF_Y_CTR_OFF"), &param) >= 0) _tkf_Y_center_offset_mm = (uint16_t) param;
     else PX4_ERR("Error reading `VL_TKF_Y_CTR_OFF` parameter!");
 
-    param_get(param_find("VL_TKF_COG_LEVER"), &param_f);
-    if(param_f > 0) _tkf_CoG_lever_height_m = param_f;
+    if(param_get(param_find("VL_TKF_COG_LEVER"), &param_f) >= 0) _tkf_CoG_lever_height_m = param_f;
     else PX4_ERR("Error reading `VL_TKF_COG_LEVER` parameter!");
 
-    param_get(param_find("VL_TKF_Q_NOISE"), &param_f);
-    if(param_f > 0) _tkf_process_noise_Q = param_f;
+    if(param_get(param_find("VL_TKF_Q_NOISE"), &param_f) >= 0) _tkf_process_noise_Q = param_f;
     else PX4_ERR("Error reading `VL_TKF_Q_NOISE` parameter!");
 
-    param_get(param_find("VL_TKF_MIN_SIGMA"), &param_f);
-    if(param_f > 0) _tkf_min_sigma_R = param_f;
+    if(param_get(param_find("VL_TKF_MIN_SIGMA"), &param_f) >= 0) _tkf_min_sigma_R = param_f;
     else PX4_ERR("Error reading `VL_TKF_MIN_SIGMA` parameter!");
 
-    param_get(param_find("VL_TKF_USE_NGATE"), &param);
-    if(param > 0) _tkf_use_NIS_GATE = (bool)param;
+    if(param_get(param_find("VL_TKF_USE_NGATE"), &param) >= 0) _tkf_use_NIS_GATE = (bool)param;
     else PX4_ERR("Error reading `VL_TKF_USE_NGATE` parameter!");
 
-    param_get(param_find("VL_TKF_NGATE_THR"), &param_f);
-    if(param_f > 0) _tkf_NIS_GATE_treshold = param_f;
+    if(param_get(param_find("VL_TKF_NGATE_THR"), &param_f) >= 0) _tkf_NIS_GATE_treshold = param_f;
     else PX4_ERR("Error reading `VL_TKF_NGATE_THR` parameter!");
 
-    param_get(param_find("VL_TKF_USE_SIGDG"), &param);
-    if(param > 0) _tkf_use_signal_degrade = (bool)param;
+    if(param_get(param_find("VL_TKF_USE_SIGDG"), &param) >= 0) _tkf_use_signal_degrade = (bool)param;
     else PX4_ERR("Error reading `VL_TKF_USE_SIGDG` parameter!");
 
-    param_get(param_find("VL_TKF_SD_FACTOR"), &param_f);
-    if(param_f > 0) _tkf_signal_degrade_factor = param_f;
+    if(param_get(param_find("VL_TKF_SD_FACTOR"), &param_f) >= 0) _tkf_signal_degrade_factor = param_f;
     else PX4_ERR("Error reading `VL_TKF_SD_FACTOR` parameter!");
 
 #endif
@@ -416,6 +404,46 @@ bool VL53L8_Distro::parse_and_fill_visual_odometry(Visual_Odometry_Data2_s *data
     msg.rejected_y          = data->rejected_y;
     msg.frame               = data->frame;
     _optical_navigation_pub.publish(msg);
+
+    bool got_vert_data = false;
+    optical_navigation_vertical_s v_msg = {};
+    if (_optical_nav_vert_sub.update(&v_msg)) {
+        got_vert_data = true;
+    }
+
+    vehicle_odometry_s vo_msg = {};
+    vo_msg.timestamp = hrt_absolute_time();
+    vo_msg.timestamp_sample = data->timestamp;
+    vo_msg.timestamp_sample_z = got_vert_data ? v_msg.timestamp : 0;
+
+    vo_msg.pose_frame = vehicle_odometry_s::POSE_FRAME_NED;
+    vo_msg.position[0] = data->x_m;
+    vo_msg.position[1] = data->y_m;
+    vo_msg.position[2] = got_vert_data ? v_msg.z_m : NAN;
+
+    vo_msg.q[0] = NAN;
+
+    vo_msg.velocity_frame = vehicle_odometry_s::POSE_FRAME_NED;
+    vo_msg.velocity[0] = data->vx_mps;
+    vo_msg.velocity[1] = data->vy_mps;
+    vo_msg.velocity[2] = got_vert_data ? v_msg.vz_m_s : NAN;
+
+    vo_msg.angular_velocity[0] = NAN;
+    vo_msg.angular_velocity[1] = NAN;
+    vo_msg.angular_velocity[2] = NAN;
+
+    vo_msg.position_variance[0] = data->var_x_m2;
+    vo_msg.position_variance[1] = data->var_y_m2;
+    vo_msg.position_variance[2] = got_vert_data ? v_msg.var_z_m2 : NAN;
+
+    vo_msg.velocity_variance[0] = data->var_vx_m2s2;
+    vo_msg.velocity_variance[1] = data->var_vy_m2s2;
+    vo_msg.velocity_variance[2] = got_vert_data ? v_msg.var_vz_m2s2 : NAN;
+
+    vo_msg.reset_counter = 0;
+    vo_msg.quality = 95;
+
+    _vehicle_odometry_pub.publish(vo_msg);
 
     return true;
 }
@@ -678,7 +706,7 @@ int VL53L8_Distro::initialize_sensor() {
         px4_udelay(50);
 
         msg_multi.cmd = UART_PROT_CMD_L4_RNG_TIME_BUDGET;
-        msg_multi.value_u = _sensor_L4_Y_range_budget_ms;
+        msg_multi.value_u = _sensor_L4_range_budget_ms;
         msg_multi.calculate_crc(true);
         ret = _uart.write((const void *)&msg_multi, sizeof(msg_multi));
         if (ret <= 0) { PX4_ERR("write failed: %d (%s)", errno, strerror(errno)); perf_count(_comms_errors); return PX4_ERROR; }
