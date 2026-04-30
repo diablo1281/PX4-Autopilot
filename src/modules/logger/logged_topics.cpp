@@ -415,6 +415,18 @@ void LoggedTopics::add_vl_distro()
 	add_topic("optical_navigation_vertical");
 	PX4_INFO("Adding VO Data v2 to logs");
 	add_topic("optical_navigation_horizontal");
+	// Additional topics
+	add_topic("actuator_outputs");
+	add_topic("actuator_motors");
+
+	add_topic_multi("sensor_baro");
+	add_topic_multi("vehicle_air_data");
+	add_topic_multi("sensor_optical_flow");
+
+	add_topic("shaft_kf_estimate");
+	add_topic("shaft_kf_status");
+	add_topic("shaft_kf_event");
+	add_topic_multi("vehicle_visual_odometry");
 }
 
 int LoggedTopics::add_topics_from_file(const char *fname)

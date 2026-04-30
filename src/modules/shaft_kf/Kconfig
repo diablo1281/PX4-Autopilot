@@ -1,0 +1,5 @@
+menuconfig MODULES_SHAFT_KF
+	bool "shaft_kf"
+	default n
+	---help---
+		Enable support for ShaftKF

@@ -18,6 +18,8 @@ param set-default SENS_EN_INA238 0
 param set-default SENS_EN_INA228 0
 param set-default SENS_EN_INA226 0
 
+param set-default SKF_ENABLE 0
+
 if ver hwbasecmp 009 010 011
 then
 	# Skynode: use the "custom participant" config for uxrce_dds_client
@@ -25,3 +27,9 @@ then
 fi
 
 safety_button start
+
+# Start Shaft Kalman Filter only on this board, only if enabled
+if param compare SKF_ENABLE 1
+then
+	shaft_kf start
+fi

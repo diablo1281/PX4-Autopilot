@@ -60,7 +60,7 @@ VL53L8_Distro::VL53L8_Distro(const char *path, int baudrate) :
     }
 
     _optical_navigation_pub.advertise();
-    _vehicle_odometry_pub.advertise();
+    // _vehicle_odometry_pub.advertise();
 }
 
 VL53L8_Distro::~VL53L8_Distro()
@@ -405,45 +405,45 @@ bool VL53L8_Distro::parse_and_fill_visual_odometry(Visual_Odometry_Data2_s *data
     msg.frame               = data->frame;
     _optical_navigation_pub.publish(msg);
 
-    bool got_vert_data = false;
-    optical_navigation_vertical_s v_msg = {};
-    if (_optical_nav_vert_sub.update(&v_msg)) {
-        got_vert_data = true;
-    }
+    // bool got_vert_data = false;
+    // optical_navigation_vertical_s v_msg = {};
+    // if (_optical_nav_vert_sub.update(&v_msg)) {
+    //     got_vert_data = true;
+    // }
 
-    vehicle_odometry_s vo_msg = {};
-    vo_msg.timestamp = hrt_absolute_time();
-    vo_msg.timestamp_sample = data->timestamp;
-    vo_msg.timestamp_sample_z = got_vert_data ? v_msg.timestamp : 0;
+    // vehicle_odometry_s vo_msg = {};
+    // vo_msg.timestamp = hrt_absolute_time();
+    // vo_msg.timestamp_sample = data->timestamp;
+    // vo_msg.timestamp_sample_z = got_vert_data ? v_msg.timestamp : 0;
 
-    vo_msg.pose_frame = vehicle_odometry_s::POSE_FRAME_NED;
-    vo_msg.position[0] = data->x_m;
-    vo_msg.position[1] = data->y_m;
-    vo_msg.position[2] = got_vert_data ? v_msg.z_m : NAN;
+    // vo_msg.pose_frame = vehicle_odometry_s::POSE_FRAME_NED;
+    // vo_msg.position[0] = data->x_m;
+    // vo_msg.position[1] = data->y_m;
+    // vo_msg.position[2] = got_vert_data ? v_msg.z_m : NAN;
 
-    vo_msg.q[0] = NAN;
+    // vo_msg.q[0] = NAN;
 
-    vo_msg.velocity_frame = vehicle_odometry_s::POSE_FRAME_NED;
-    vo_msg.velocity[0] = data->vx_mps;
-    vo_msg.velocity[1] = data->vy_mps;
-    vo_msg.velocity[2] = got_vert_data ? v_msg.vz_m_s : NAN;
+    // vo_msg.velocity_frame = vehicle_odometry_s::POSE_FRAME_NED;
+    // vo_msg.velocity[0] = data->vx_mps;
+    // vo_msg.velocity[1] = data->vy_mps;
+    // vo_msg.velocity[2] = got_vert_data ? v_msg.vz_m_s : NAN;
 
-    vo_msg.angular_velocity[0] = NAN;
-    vo_msg.angular_velocity[1] = NAN;
-    vo_msg.angular_velocity[2] = NAN;
+    // vo_msg.angular_velocity[0] = NAN;
+    // vo_msg.angular_velocity[1] = NAN;
+    // vo_msg.angular_velocity[2] = NAN;
 
-    vo_msg.position_variance[0] = data->var_x_m2;
-    vo_msg.position_variance[1] = data->var_y_m2;
-    vo_msg.position_variance[2] = got_vert_data ? v_msg.var_z_m2 : NAN;
+    // vo_msg.position_variance[0] = data->var_x_m2;
+    // vo_msg.position_variance[1] = data->var_y_m2;
+    // vo_msg.position_variance[2] = got_vert_data ? v_msg.var_z_m2 : NAN;
 
-    vo_msg.velocity_variance[0] = data->var_vx_m2s2;
-    vo_msg.velocity_variance[1] = data->var_vy_m2s2;
-    vo_msg.velocity_variance[2] = got_vert_data ? v_msg.var_vz_m2s2 : NAN;
+    // vo_msg.velocity_variance[0] = data->var_vx_m2s2;
+    // vo_msg.velocity_variance[1] = data->var_vy_m2s2;
+    // vo_msg.velocity_variance[2] = got_vert_data ? v_msg.var_vz_m2s2 : NAN;
 
-    vo_msg.reset_counter = 0;
-    vo_msg.quality = 95;
+    // vo_msg.reset_counter = 0;
+    // vo_msg.quality = 95;
 
-    _vehicle_odometry_pub.publish(vo_msg);
+    // _vehicle_odometry_pub.publish(vo_msg);
 
     return true;
 }

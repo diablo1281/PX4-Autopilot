@@ -1,0 +1,60 @@
+uint64 timestamp
+uint64 timestamp_sample
+
+uint32 prediction_count
+uint32 event_count
+uint32 update_count
+uint32 accepted_update_count
+uint32 rejected_update_count
+
+uint32 vl_x_update_count
+uint32 vl_y_update_count
+uint32 pat_z_update_count
+uint32 pat_dyaw_update_count
+uint32 baro_z_update_count
+uint32 xy_zupt_update_count
+uint32 z_zupt_update_count
+
+uint32 vl_x_reject_count
+uint32 vl_y_reject_count
+uint32 pat_z_reject_count
+uint32 pat_dyaw_reject_count
+uint32 baro_z_reject_count
+uint32 xy_zupt_reject_count
+uint32 z_zupt_reject_count
+
+uint32 vl_x_degraded_count
+uint32 vl_y_degraded_count
+uint32 pat_z_degraded_count
+uint32 pat_dyaw_degraded_count
+uint32 baro_z_degraded_count
+
+uint16 event_mask
+uint16 accepted_event_mask
+uint16 rejected_event_mask
+uint16 degraded_event_mask
+uint16 fault_event_mask
+
+uint16 last_vl_x_check_flags
+uint16 last_vl_y_check_flags
+uint16 last_pat_check_flags
+uint16 last_baro_check_flags
+
+float32 max_nis
+float32 mean_nis
+float32 max_abs_innovation
+
+float32 last_vl_x_nis
+float32 last_vl_y_nis
+float32 last_pat_z_nis
+float32 last_pat_dyaw_nis
+float32 last_baro_z_nis
+
+uint8 vl_x_health
+uint8 vl_y_health
+uint8 pat_health
+uint8 baro_health
+
+uint8 takeoff_state
+bool setpoint_consistency_active
+bool debug_event_enabled

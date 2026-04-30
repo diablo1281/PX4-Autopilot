@@ -55,7 +55,8 @@ public:
 private:
 	explicit MavlinkStreamOdometry(Mavlink *mavlink) : MavlinkStream(mavlink) {}
 
-	uORB::Subscription _vehicle_odometry_sub{ORB_ID(vehicle_odometry)};
+	// uORB::Subscription _vehicle_odometry_sub{ORB_ID(vehicle_odometry)};
+	uORB::Subscription _vehicle_odometry_sub{ORB_ID(vehicle_visual_odometry)};
 
 	bool send() override
 	{

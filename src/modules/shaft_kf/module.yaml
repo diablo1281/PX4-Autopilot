@@ -1,0 +1,298 @@
+module_name: shaft_kf
+parameters:
+  - group: SKF
+    definitions:
+      SKF_ENABLE:
+        description:
+          short: Enable Shaft Kalman Filter
+        type: boolean
+        default: true
+        reboot_required: true
+      SKF_P0_XY:
+        description:
+          short: Initial XY position variance
+        type: float
+        default: 0.0001
+        min: 0.0
+        decimal: 6
+      SKF_P0_Z:
+        description:
+          short: Initial Z position variance
+        type: float
+        default: 0.0004
+        min: 0.0
+        decimal: 6
+      SKF_P0_VXY:
+        description:
+          short: Initial XY velocity variance
+        type: float
+        default: 0.0025
+        min: 0.0
+        decimal: 6
+      SKF_P0_VZ:
+        description:
+          short: Initial Z velocity variance
+        type: float
+        default: 0.0004
+        min: 0.0
+        decimal: 6
+      SKF_P0_DYAW:
+        description:
+          short: Initial relative yaw variance
+        type: float
+        default: 0.0305
+        min: 0.0
+        decimal: 6
+      SKF_SIGMA_AX:
+        description:
+          short: X process acceleration noise
+        type: float
+        default: 0.6
+        min: 0.0
+        decimal: 3
+      SKF_SIGMA_AY:
+        description:
+          short: Y process acceleration noise
+        type: float
+        default: 0.6
+        min: 0.0
+        decimal: 3
+      SKF_SIGMA_AZ:
+        description:
+          short: Z process acceleration noise
+        type: float
+        default: 1.5
+        min: 0.0
+        decimal: 3
+      SKF_SIGMA_DYAW:
+        description:
+          short: Relative yaw random walk noise
+        type: float
+        default: 0.00873
+        min: 0.0
+        decimal: 6
+      SKF_MAX_DT:
+        description:
+          short: Maximum prediction dt
+        type: float
+        default: 0.20
+        min: 0.001
+        max: 1.0
+        decimal: 3
+      SKF_VL_OFF_X:
+        description:
+          short: VL-X center offset
+        type: int32
+        default: 61
+        min: 0
+        max: 120
+        unit: mm
+        reboot_required: true
+        num_instances: 1
+      SKF_VL_OFF_Y:
+        description:
+          short: VL-Y center offset
+        type: int32
+        default: 62
+        min: 0
+        max: 120
+        unit: mm
+        reboot_required: true
+        num_instances: 1
+      SKF_VL_SGN_X:
+        description:
+          short: Sign converting centered VL-X distance to body X displacement
+        type: float
+        default: 1.0
+        min: -1.0
+        max: 1.0
+        decimal: 1
+      SKF_VL_SGN_Y:
+        description:
+          short: Sign converting centered VL-Y distance to body Y displacement
+        type: float
+        default: 1.0
+        min: -1.0
+        max: 1.0
+        decimal: 1
+      SKF_VL_DYAW_ROT:
+        description:
+          short: Include SKF relative yaw in VL NED-to-body projection
+        type: boolean
+        default: false
+      SKF_VL_LEVER:
+        description:
+          short: Vertical lever arm between VL trolley plane and CoG
+        type: float
+        default: 0.05
+        decimal: 4
+      SKF_VL_SIGMA_FL:
+        description:
+          short: VL minimum measurement sigma (floor)
+        type: float
+        default: 0.005
+        min: 0.0
+        decimal: 4
+      SKF_VL_NIS:
+        description:
+          short: VL NIS rejection gate
+        type: float
+        default: 16.0
+        min: 0.0
+        decimal: 2
+      SKF_VL_HEALTH_EN:
+        description:
+          short: Enable VL health checks
+        type: boolean
+        default: true
+      SKF_VL_REJECT_EN:
+        description:
+          short: Reject VL measurements classified as fault
+        type: boolean
+        default: true
+      SKF_VL_SIGMA_DGR:
+        description:
+          short: VL sigma degraded threshold in mm
+        type: float
+        default: 10.0
+        min: 0.0
+        decimal: 2
+      SKF_VL_SIGMA_FLT:
+        description:
+          short: VL sigma fault threshold in mm
+        type: float
+        default: 30.0
+        min: 0.0
+        decimal: 2
+      SKF_VL_V_DGR:
+        description:
+          short: VL raw velocity degraded threshold
+        type: float
+        default: 0.4
+        min: 0.0
+        decimal: 2
+      SKF_VL_V_FLT:
+        description:
+          short: VL raw velocity fault threshold
+        type: float
+        default: 1.0
+        min: 0.0
+        decimal: 2
+      SKF_VL_RAD_EN:
+        description:
+          short: Enable VL radial distance plausibility limit
+        type: boolean
+        default: true
+      SKF_VL_RAD_DGR:
+        description:
+          short: VL radial degraded threshold
+        type: float
+        default: 0.05
+        min: 0.0
+        decimal: 3
+      SKF_VL_RAD_FLT:
+        description:
+          short: VL radial fault threshold
+        type: float
+        default: 0.08
+        min: 0.0
+        decimal: 3
+      SKF_XY_ZUPT_EN:
+        description:
+          short: Enable XY zero velocity pseudo updates
+        type: boolean
+        default: true
+      SKF_XY_ZUPT_SIG:
+        description:
+          short: XY zero velocity pseudo update sigma
+        type: float
+        default: 0.08
+        min: 0.0
+        decimal: 3
+      SKF_PAT_ROT_DEG:
+        description:
+          short: PAT sensor Y axis angle relative to NED vertical axis
+        type: float
+        default: 0.0
+        decimal: 4
+      SKF_PAT_SIGMA_Z:
+        description:
+          short: PAT Z base measurement sigma
+        type: float
+        default: 0.010
+        min: 0.0
+        decimal: 4
+      SKF_PAT_NIS_Z:
+        description:
+          short: PAT Z NIS rejection gate
+        type: float
+        default: 9.0
+        min: 0.0
+        decimal: 2
+      SKF_PAT_HLTH_EN:
+        description:
+          short: Enable PAT health checks
+        type: boolean
+        default: true
+      SKF_PAT_REJ_EN:
+        description:
+          short: Reject PAT measurements classified as fault
+        type: boolean
+        default: true
+      SKF_PAT_SQ2_DGR:
+        description:
+          short: PAT squal2 degraded threshold
+        type: float
+        default: 40.0
+        decimal: 1
+      SKF_PAT_SQ2_FLT:
+        description:
+          short: PAT squal2 fault threshold
+        type: float
+        default: 25.0
+        decimal: 1
+      SKF_PAT_VZ_DGR:
+        description:
+          short: PAT raw vertical speed degraded threshold
+        type: float
+        default: 1.0
+        min: 0.0
+        decimal: 2
+      SKF_PAT_VZ_FLT:
+        description:
+          short: PAT raw vertical speed fault threshold
+        type: float
+        default: 1.8
+        min: 0.0
+        decimal: 2
+      SKF_YAW_RAD:
+        description:
+          short: Rope radius used to convert PAT tangential displacement to relative yaw
+        type: float
+        default: 0.003
+        min: 0.0001
+        decimal: 5
+      SKF_YAW_SIGMA:
+        description:
+          short: Relative yaw measurement sigma
+        type: float
+        default: 0.01745
+        min: 0.0
+        decimal: 5
+      SKF_BARO_SIGMA:
+        description:
+          short: Barometer relative Z measurement sigma
+        type: float
+        default: 0.50
+        min: 0.0
+        decimal: 3
+      SKF_BARO_EN:
+        description:
+          short: Enable barometer Z updates
+        type: boolean
+        default: true
+      SKF_DBG_EVENT:
+        description:
+          short: Publish per-update ShaftKF event debug messages
+        type: boolean
+        default: false

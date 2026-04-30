@@ -242,6 +242,12 @@ void PAT9136_I2C::RunImpl() {
 		_error_counter = 0;
 		hrt_abstime now = hrt_absolute_time();
 
+		if(this->_optical_nav.timestamp == 0) {
+			this->_optical_nav.new_data = true;
+		} else {
+			this->_optical_nav.new_data = this->_nav_data.new_data;
+		}
+
 		this->_optical_nav.dt_us = now - this->_optical_nav.timestamp;
 		this->_optical_nav.sensor_id = this->_device_id;
 
@@ -257,7 +263,7 @@ void PAT9136_I2C::RunImpl() {
 		this->_optical_nav.shutter = this->_nav_data.shutter;
 		this->_optical_nav.x_resolution = this->_x_resolution_cpi;
 		this->_optical_nav.y_resolution = this->_y_resolution_cpi;
-		this->_optical_nav.new_data = this->_nav_data.new_data;
+
 
 
 		// KF
