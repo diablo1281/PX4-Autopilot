@@ -403,15 +403,15 @@ void ShaftKFModule::Run()
 		events_timestamps[static_cast<uint8_t>(UpdateEvent::BARO)] = baro_sample.timestamp_sample;
 	}
 
-	if(hrt_elapsed_time(&_last_publish_us) > 1000_ms) {
-		_last_publish_us = now;
-		PX4_INFO("mask=%u vlx=%llu vly=%llu pat=%llu baro=%llu",
-			event_mask,
-			events_timestamps[0],
-			events_timestamps[1],
-			events_timestamps[2],
-			events_timestamps[3]);
-	}
+	// if(hrt_elapsed_time(&_last_publish_us) > 1000_ms) {
+	// 	_last_publish_us = now;
+	// 	PX4_INFO("mask=%u vlx=%llu vly=%llu pat=%llu baro=%llu",
+	// 		event_mask,
+	// 		events_timestamps[0],
+	// 		events_timestamps[1],
+	// 		events_timestamps[2],
+	// 		events_timestamps[3]);
+	// }
 
 	while(event_mask > 0) {
 		// Find event with oldest timestamp

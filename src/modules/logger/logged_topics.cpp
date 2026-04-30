@@ -408,25 +408,30 @@ void LoggedTopics::add_mavlink_tunnel()
 
 void LoggedTopics::add_vl_distro()
 {
-	PX4_INFO("Adding VL_DISTRO to logs");
-	add_topic_multi("distance_sensor_matrix");
-	add_topic_multi("distance_sensor_single");
+	PX4_INFO("Adding SKF to logs");
+	add_topic("shaft_kf_estimate");
+	add_topic("shaft_kf_status");
+	add_topic("shaft_kf_event");
+
+	add_topic_multi("vehicle_air_data");
+
+	// add_topic("vehicle_visual_odometry");
+
 	PX4_INFO("Adding PAT9136 to logs");
 	add_topic("optical_navigation_vertical");
 	PX4_INFO("Adding VO Data v2 to logs");
 	add_topic("optical_navigation_horizontal");
+
+	PX4_INFO("Adding VL_DISTRO to logs");
+	// add_topic_multi("distance_sensor_matrix");
+	add_topic_multi("distance_sensor_single");
+
+
 	// Additional topics
-	add_topic("actuator_outputs");
-	add_topic("actuator_motors");
+	// add_topic("actuator_outputs");
+	// add_topic("actuator_motors");
 
-	add_topic_multi("sensor_baro");
-	add_topic_multi("vehicle_air_data");
-	add_topic_multi("sensor_optical_flow");
-
-	add_topic("shaft_kf_estimate");
-	add_topic("shaft_kf_status");
-	add_topic("shaft_kf_event");
-	add_topic_multi("vehicle_visual_odometry");
+	add_topic("sensor_optical_flow");
 }
 
 int LoggedTopics::add_topics_from_file(const char *fname)
